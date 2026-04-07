@@ -2,7 +2,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
-from lib.connect_ps3_control import ensure_connected
+from connect_ps3_control import ensure_connected
 
 from evdev import InputDevice, ecodes
 

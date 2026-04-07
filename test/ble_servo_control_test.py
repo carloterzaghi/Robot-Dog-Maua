@@ -3,7 +3,7 @@ import os
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
-from lib.connect_ps3_control import ensure_connected
+from connect_ps3_control import ensure_connected
 
 from evdev import InputDevice, categorize, ecodes
 from adafruit_servokit import ServoKit # [cite: 544]
@@ -21,6 +21,12 @@ if not caminho:
 gamepad = InputDevice(caminho)
 print(f"Controle conectado: {gamepad.name} ({caminho})")
 
+# Descobre os limites reais do eixo ABS_Y reportados pelo dispositivo
+abs_info = gamepad.absinfo(ecodes.ABS_Y)
+JOY_MIN = abs_info.min
+JOY_MAX = abs_info.max
+print(f"Limites do ABS_Y: {JOY_MIN} – {JOY_MAX}")
+
 # Função para converter a escala do joystick (0-255) para graus do servo (0-180)
 def map_valor(valor_atual, min_entrada, max_entrada, min_saida, max_saida):
     return (valor_atual - min_entrada) * (max_saida - min_saida) / (max_entrada - min_entrada) + min_saida
@@ -35,9 +41,9 @@ try:
             if event.code == ecodes.ABS_Y:
                 valor_joystick = event.value
                 
-                # Mapeia de 0-255 para 0-180 graus
-                angulo = map_valor(valor_joystick, 0, 255, 0, 180)
-                angulo = int(angulo) # Arredonda para número inteiro
+                # Mapeia usando os limites reais do eixo e clipa para 0-180
+                angulo = map_valor(valor_joystick, JOY_MIN, JOY_MAX, 0, 180)
+                angulo = max(0, min(180, int(angulo)))  # clamp seguro
                 
                 # Envia o ângulo para o servo no canal 0
                 kit.servo[0].angle = angulo # [cite: 556, 559]
