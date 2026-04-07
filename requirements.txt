@@ -1,0 +1,9 @@
+# Dependências Python do projeto Robot-Dog-Maua
+# Instale com: pip install -r requirements.txt
+
+# Leitura de eventos do controle PS3 via /dev/input/
+evdev>=1.6.0
+
+# Driver Adafruit PCA9685 (PWM/Servo)
+adafruit-circuitpython-pca9685>=3.4.0
+adafruit-circuitpython-servokit>=1.3.0
