@@ -204,7 +204,7 @@ source env/bin/activate
 pip install -r requirements.txt
 
 # 3. Rode qualquer script de teste com o Python do venv (necessário para sudo)
-sudo env/bin/python3 test/ble_control_test.py
+sudo PYTHONPATH=. env/bin/python3 test/ble_servo_control_test_360.py
 # O script conectará o controle automaticamente se necessário.
 # Pressione o botão PS do controle quando solicitado.
 ```
