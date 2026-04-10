@@ -185,7 +185,7 @@ def handle_exit(sig, frame):
 def find_ps3_device():
     """Varre /dev/input/ e retorna o caminho do controle PS3 conectado, ou None."""
     try:
-        from evdev import InputDevice, list_devices
+        from evdev import InputDevice, list_devices # type: ignore
         for path in list_devices():
             try:
                 dev = InputDevice(path)
