@@ -3,9 +3,9 @@ import os
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
-from connect_ps3_control import ensure_connected
+from lib.connect_ps3_control import ensure_connected
 
-from evdev import InputDevice, categorize, ecodes
+from evdev import InputDevice, categorize, ecodes # type: ignore
 from adafruit_servokit import ServoKit # [cite: 544]
 
 # 1. Configuração do Atuador (PCA9685)
