@@ -1,12 +1,18 @@
 """
 4bars.py — Teste do mecanismo de 4 barras para uma perna do Robot Dog Mauá.
 
-Este script controla dois servos que formam o mecanismo de 4 barras de uma perna:
-  - motor_x (canal 4): responsável pelo movimento horizontal (avanço/recuo).
-  - motor_y (canal 0): responsável pelo movimento vertical (levanta/abaixa).
+Este script controla dois servos que compõem o mecanismo de 4 barras de uma
+perna do robô, permitindo testar individualmente cada servo e executar um
+ciclo de passada completo.
 
-O ciclo de passada utiliza uma trajetória elíptica senoidal contínua, garantindo
-que ambos os servos se movam de forma simultânea e fluida em todos os momentos.
+O ciclo de passada usa uma trajetória senoidal assimétrica:
+  - Motor X (horizontal): oscila em cosseno entre X_BACK e X_FORWARD.
+  - Motor Y (vertical)  : levanta suavemente (meia senoide positiva de sin(t))
+                          apenas durante a fase de avanço (t ∈ [0, π]),
+                          permanecendo no chão durante a fase de apoio (t ∈ [π, 2π]).
+
+Como executar:
+    python 4bars.py
 
 Hardware: Raspberry Pi + PCA9685 (via Adafruit ServoKit, I2C).
 """
@@ -32,7 +38,7 @@ X_BACK    = 125  # Ângulo do motor_x com a perna totalmente recuada
 
 # ── Parâmetros de tempo ───────────────────────────────────────────────────────
 STEP_DELAY = 0.01  # Intervalo (s) entre cada passo no movimento suave
-HOLD_DELAY = 0.5   # Tempo (s) de pausa nos extremos após testes individuais
+HOLD_DELAY = 0.5   # Tempo (s) de pausa nos extremos após cada teste individual
 
 
 # ── Funções utilitárias ───────────────────────────────────────────────────────
@@ -61,6 +67,7 @@ def posicao_inicial():
 
     Move motor_x e motor_y sequencialmente a partir de seus ângulos atuais,
     garantindo uma transição suave independentemente do estado anterior.
+    Aguarda HOLD_DELAY ao final para estabilizar a posição.
     """
     print("Movendo para posição inicial...")
     inicio_x = int(motor_x.angle) if motor_x.angle is not None else X_CENTER
@@ -75,7 +82,7 @@ def testar_motor_x():
     Percorre o range completo do motor_x para verificar seu funcionamento.
 
     Sequência: X_CENTER → X_FORWARD → X_BACK → X_CENTER.
-    Útil para validar limites físicos e calibrar X_FORWARD/X_BACK.
+    Útil para validar os limites físicos e calibrar X_FORWARD/X_BACK.
     """
     print("\n--- Teste motor_x (horizontal) ---")
     print(f"Centro -> Avança ({X_FORWARD}°) -> Recua ({X_BACK}°) -> Centro")
@@ -93,7 +100,7 @@ def testar_motor_y():
     Percorre o range completo do motor_y para verificar seu funcionamento.
 
     Sequência: Y_GROUND → Y_LIFT → Y_GROUND.
-    Útil para validar limites físicos e calibrar Y_LIFT.
+    Útil para validar os limites físicos e calibrar Y_LIFT.
     """
     print("\n--- Teste motor_y (vertical) ---")
     print(f"Chão ({Y_GROUND}°) -> Levanta ({Y_LIFT}°) -> Chão ({Y_GROUND}°)")
@@ -130,64 +137,61 @@ def mover_juntos(servo_a, inicio_a, fim_a, servo_b, inicio_b, fim_b, delay=STEP_
 
 def ciclo_passada(repeticoes=3, passos_por_ciclo=100):
     """
-    Executa um ciclo de passada contínuo e fluido usando trajetória elíptica.
+    Executa um ciclo de passada fluido usando trajetória senoidal assimétrica.
 
-    A posição dos dois servos é calculada a cada passo por funções cossenoidais
-    em fase, de modo que ambos se movam simultaneamente em todo momento,
-    descrevendo uma elipse no espaço de trabalho da perna:
-
+    Equações de movimento:
         x(t) = x_medio + x_amp * cos(t)
-        y(t) = y_medio + y_amp * cos(t)
+        y(t) = Y_GROUND - y_amp * max(0, sin(t))
 
-    Correspondência de fase:
-        t = 0  → X = X_BACK,    Y = Y_GROUND  (pé recuado, no chão)
-        t = π  → X = X_FORWARD, Y = Y_LIFT    (pé avançado, no alto)
+    O eixo X oscila continuamente em cosseno (simétrico). O eixo Y usa apenas
+    a metade positiva do seno, de modo que a perna só se eleva durante a fase
+    de avanço e permanece exatamente em Y_GROUND durante a fase de apoio:
+        t ∈ [0, π]  → fase de balanço: perna avança e sobe
+        t ∈ [π, 2π] → fase de apoio:   perna recua rente ao chão
+
+    Antes do ciclo, apenas motor_x é reposicionado em X_BACK via mover_suave;
+    motor_y já deve estar em Y_GROUND (posição de repouso).
 
     Parâmetros:
         repeticoes      : número de ciclos completos a executar (padrão 3).
-        passos_por_ciclo: resolução angular do ciclo — mais passos geram
-                          movimento mais suave, porém mais lento (padrão 100).
+        passos_por_ciclo: resolução do ciclo — mais passos = movimento mais
+                          suave, porém mais lento (padrão 100).
     """
     print(f"\n--- Ciclo de passada fluido ({repeticoes} repetições) ---")
 
     # Ponto médio e amplitude da oscilação horizontal
     x_medio = (X_BACK + X_FORWARD) / 2
-    x_amp   = (X_BACK - X_FORWARD) / 2   # positivo pois X_BACK > X_FORWARD
+    x_amp   = (X_BACK - X_FORWARD) / 2  # positivo pois X_BACK > X_FORWARD
+    # Amplitude total de elevação da perna
+    y_amp   = Y_GROUND - Y_LIFT  # positivo pois Y_GROUND > Y_LIFT
 
-    # Ponto médio e amplitude da oscilação vertical
-    y_medio = (Y_GROUND + Y_LIFT) / 2
-    y_amp   = (Y_GROUND - Y_LIFT) / 2    # positivo pois Y_GROUND > Y_LIFT
-
-    # Leva a perna ao ponto inicial do ciclo (X_BACK, Y_GROUND) suavemente
+    # Reposiciona apenas motor_x em X_BACK para iniciar o ciclo no ponto correto
     inicio_x = int(motor_x.angle) if motor_x.angle is not None else X_CENTER
-    inicio_y = int(motor_y.angle) if motor_y.angle is not None else Y_GROUND
-    mover_juntos(motor_x, inicio_x, X_BACK, motor_y, inicio_y, Y_GROUND)
+    mover_suave(motor_x, inicio_x, X_BACK)
 
     for rep in range(repeticoes):
         print(f"  Passo {rep + 1}/{repeticoes}")
         for i in range(passos_por_ciclo):
-            # t é o parâmetro angular do ciclo, variando de 0 a 2π (exclusive).
-            # Cada incremento de i representa um "fatia" igual do ciclo completo.
+            # t percorre [0, 2π) uniformemente ao longo do ciclo
             t = 2 * math.pi * i / passos_por_ciclo
 
-            # Trajetória elíptica: x e y compartilham o mesmo cos(t), por isso
-            # atingem seus extremos exatamente ao mesmo tempo:
-            #   t=0 → (X_BACK,    Y_GROUND)  — pé recuado, apoiado no chão
-            #   t=π → (X_FORWARD, Y_LIFT)    — pé avançado, no ponto mais alto
-            # Como cos(t) é contínuo e periódico, não há descontinuidade entre
-            # o fim de uma repetição e o início da próxima.
+            # Posição horizontal: X_BACK em t=0, X_FORWARD em t=π
             x_angle = x_medio + x_amp * math.cos(t)
-            y_angle = y_medio + y_amp * math.cos(t)
 
-            # Arredonda para inteiro pois servo.angle exige valor discreto (graus).
+            # Posição vertical: eleva só durante a fase de avanço (sin(t) > 0)
+            # Em t ∈ [π, 2π], max retorna 0 e y_angle == Y_GROUND (pé no chão)
+            y_angle = Y_GROUND - y_amp * max(0.0, math.sin(t))
+
+            # Arredonda para inteiro pois servo.angle exige valor discreto (graus)
             motor_x.angle = round(x_angle)
             motor_y.angle = round(y_angle)
-            time.sleep(STEP_DELAY)  # Aguarda antes do próximo passo para suavizar o movimento
+            time.sleep(STEP_DELAY)  # Intervalo entre passos para suavizar o movimento
 
     print("Ciclo concluído.")
 
 
-# ── Menu ──────────────────────────────────────────────────────────────────────
+# ── Menu interativo ──────────────────────────────────────────────────────────
+# Executa posicao_inicial() logo ao iniciar para garantir um estado conhecido.
 posicao_inicial()
 
 opcao = ""
