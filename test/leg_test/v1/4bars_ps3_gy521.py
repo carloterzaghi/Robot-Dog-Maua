@@ -301,9 +301,15 @@ def loop_movimento():
         if dir_atual == 0:
             # Analógico solto: retorna ao repouso uma única vez por parada
             if not parado:
-                posicao_inicial()
+                # posicao_inicial()
                 i = 0
                 parado = True
+
+            # Equilíbrio estático: aplica correções do IMU quando parado
+            x_bal = max(0, min(180, round(X_CENTER + xc)))
+            y_bal = max(0, min(180, round(Y_GROUND + yc)))
+            motor_x.angle = x_bal
+            motor_y.angle = y_bal
             time.sleep(0.05)
             continue
 

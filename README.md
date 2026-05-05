@@ -204,7 +204,7 @@ source env/bin/activate
 pip install -r requirements.txt
 
 # 3. Rode qualquer script de teste com o Python do venv (necessário para sudo)
-sudo PYTHONPATH=. env/bin/python3 test/ble_servo_control_test_360.py
+sudo PYTHONPATH=. env/bin/python3 test/leg_test/v1/4bars_ps3_gy521.py
 # O script conectará o controle automaticamente se necessário.
 # Pressione o botão PS do controle quando solicitado.
 ```
@@ -214,7 +214,7 @@ sudo PYTHONPATH=. env/bin/python3 test/ble_servo_control_test_360.py
 Útil para depurar qual `eventX` o controle está usando:
 
 ```bash
-env/bin/python3 test/ble_read.py
+env/bin/python3 test/general_test/ble_read.py
 # Exemplo de saída:
 # /dev/input/event5 --- PLAYSTATION(R)3 Controller
 ```
