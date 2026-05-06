@@ -20,8 +20,8 @@ from adafruit_servokit import ServoKit
 
 kit = ServoKit(channels=16)
 
-servo_ombro  = kit.servo[0]  # Servo 0: ombro (elevação — link superior do paralelogramo)
-servo_joelho = kit.servo[4]  # Servo 4: joelho (extensão — link inferior/traseiro)
+servo_ombro  = kit.servo[3]  # Servo 0: ombro (elevação — link superior do paralelogramo)
+servo_joelho = kit.servo[7]  # Servo 4: joelho (extensão — link inferior/traseiro)
 
 # MG966R: range 0-180°
 ANGULO_MIN = 0
