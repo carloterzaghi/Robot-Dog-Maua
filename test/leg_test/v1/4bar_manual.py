@@ -2,15 +2,15 @@ from adafruit_servokit import ServoKit
 
 kit = ServoKit(channels=16)
 
-motor_x = kit.servo[4]  # Movimento horizontal (avanço/recuo da perna)
-motor_y = kit.servo[0]  # Movimento vertical (levanta/abaixa a perna)
+SERVOS_VALIDOS = list(range(0, 16))
 
 # MG966R: range 0-180°
 ANGULO_MIN = 0
 ANGULO_MAX = 180
 
 print("Controle manual MG966R")
-print("Comandos: 'x <angulo>', 'y <angulo>', 'q' para sair")
+print("Comandos: '<servo> <angulo>', 'q' para sair")
+print(f"Servos válidos: {SERVOS_VALIDOS}")
 print(f"Range válido: {ANGULO_MIN} a {ANGULO_MAX} graus\n")
 
 while True:
@@ -21,25 +21,26 @@ while True:
         break
 
     partes = entrada.split()
-    if len(partes) != 2 or partes[0] not in ("x", "y"):
-        print("Formato inválido. Use: x <angulo> ou y <angulo>")
+    if len(partes) != 2:
+        print("Formato inválido. Use: <servo> <angulo>")
         continue
 
     try:
+        servo_id = int(partes[0])
         angulo = float(partes[1])
     except ValueError:
-        print("Ângulo inválido. Digite um número.")
+        print("Valores inválidos. Servo deve ser inteiro e ângulo um número.")
+        continue
+
+    if servo_id not in SERVOS_VALIDOS:
+        print(f"Servo inválido. Use um de: {SERVOS_VALIDOS}")
         continue
 
     if not (ANGULO_MIN <= angulo <= ANGULO_MAX):
         print(f"Ângulo fora do range ({ANGULO_MIN}-{ANGULO_MAX}°).")
         continue
 
-    if partes[0] == "x":
-        motor_x.angle = angulo
-        print(f"motor_x -> {angulo}°")
-    else:
-        motor_y.angle = angulo
-        print(f"motor_y -> {angulo}°")
+    kit.servo[servo_id].angle = angulo
+    print(f"servo[{servo_id}] -> {angulo}°")
 
 
