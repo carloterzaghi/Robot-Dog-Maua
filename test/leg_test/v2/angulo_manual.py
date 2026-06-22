@@ -23,7 +23,7 @@ def angle_corrector(angles=[0,0]):
     #Adjusting for angles out of range, and making angles be between -pi,pi
     # for index, theta in enumerate(angles):
     #     if theta > 2*m.pi: angles[index] = np.mod(theta,2*m.pi)
-    #     if theta > m.pi: angles[index] = -(2*m.pi - theta)
+    #     if theta > m.pi: angles[index] = -(2*m.pi -1' theta)
     return angles
 
 def exibe_deg(ang, text, printa):
@@ -64,7 +64,15 @@ while True:
     # x = -15
     # z = -80
 
+    MAX_RADIUS = 153.26  # mm — raio máximo permitido
+
     len_B = norm([x, 0, z])
+    if len_B > MAX_RADIUS:
+        scale = MAX_RADIUS / len_B
+        x *= scale
+        z *= scale
+        len_B = MAX_RADIUS
+        print(f"[AVISO] Ponto fora do raio máximo. Escalado para ({x:.2f}, {z:.2f})")
 
     # b_1 : angle between +ve x-axis and len_B (0 <= b_1 < 2pi)
     # b_2 : angle between len_B and link_2
