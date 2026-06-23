@@ -6,8 +6,8 @@ from adafruit_servokit import ServoKit        # type: ignore
 
 # ── Inicialização do controlador de servos (PCA9685, 16 canais, I2C) ──────────
 kit = ServoKit(channels=16)
-servo_femur = kit.servo[3]   # Servo 0: fêmur — braço 120 mm (Servo Superior do encaixe da perna)
-servo_tibia = kit.servo[7]   # Servo 4: tíbia — braço 130 mm (Servo Inferior do encaixe da perna)
+servo_femur = kit.servo[3]   # Theta 2: fêmur — braço 120 mm (Servo Superior do encaixe da perna)
+servo_tibia = kit.servo[7]   # Theta 3: tíbia — braço 130 mm (Servo Inferior do encaixe da perna)
 
 def point_to_rad(p1, p2): # converts 2D cartesian points to polar angles in range 0 - 2pi
     theta = m.atan2(p2, p1)
@@ -66,6 +66,11 @@ while True:
         # z = -80
 
         MAX_RADIUS = 220 # mm — raio máximo permitido
+        MAX_Z = -80      # mm — profundidade mínima permitida
+
+        if z > MAX_Z:
+            z = MAX_Z
+            print(f"[AVISO] Z acima do máximo. Ajustado para {MAX_Z} mm")
 
         len_B = norm([x, 0, z])
         if len_B > MAX_RADIUS:
@@ -97,7 +102,7 @@ while True:
 
         servo_femur.angle = exibe_deg(angulos[0],"theta_2 ajustado",1)
 
-        servo_tibia.angle = exibe_deg(angulos[1],"theta_3 ajustado",1)
+        servo_tibia.angle = exibe_deg(angulos[1],"theta_3 ajustado",1) - 8
     except ValueError:
         servo_femur.angle = 90
-        servo_tibia.angle = 90
+        servo_tibia.angle = 82
