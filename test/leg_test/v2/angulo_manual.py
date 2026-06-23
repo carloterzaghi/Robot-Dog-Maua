@@ -6,8 +6,8 @@ from adafruit_servokit import ServoKit        # type: ignore
 
 # ── Inicialização do controlador de servos (PCA9685, 16 canais, I2C) ──────────
 kit = ServoKit(channels=16)
-servo_femur = kit.servo[3]   # Servo 0: fêmur — braço 120 mm
-servo_tibia = kit.servo[7]   # Servo 4: tíbia — braço 130 mm
+servo_femur = kit.servo[3]   # Servo 0: fêmur — braço 120 mm (Servo Superior do encaixe da perna)
+servo_tibia = kit.servo[7]   # Servo 4: tíbia — braço 130 mm (Servo Inferior do encaixe da perna)
 
 def point_to_rad(p1, p2): # converts 2D cartesian points to polar angles in range 0 - 2pi
     theta = m.atan2(p2, p1)
@@ -57,43 +57,47 @@ link = Leg_linkage()
 
 while True:
     print("X:")
-    x = float(input())
-    print("Z:")
-    z = float(input())
+    try:
+        x = float(input())
+        print("Z:")
+        z = float(input())
 
-    # x = -15
-    # z = -80
+        # x = -15
+        # z = -80
 
-    MAX_RADIUS = 153.26  # mm — raio máximo permitido
+        MAX_RADIUS = 220 # mm — raio máximo permitido
 
-    len_B = norm([x, 0, z])
-    if len_B > MAX_RADIUS:
-        scale = MAX_RADIUS / len_B
-        x *= scale
-        z *= scale
-        len_B = MAX_RADIUS
-        print(f"[AVISO] Ponto fora do raio máximo. Escalado para ({x:.2f}, {z:.2f})")
+        len_B = norm([x, 0, z])
+        if len_B > MAX_RADIUS:
+            scale = MAX_RADIUS / len_B
+            x *= scale
+            z *= scale
+            len_B = MAX_RADIUS
+            print(f"[AVISO] Ponto fora do raio máximo. Escalado para ({x:.2f}, {z:.2f})")
 
-    # b_1 : angle between +ve x-axis and len_B (0 <= b_1 < 2pi)
-    # b_2 : angle between len_B and link_2
-    # b_3 : angle between link_2 and link_3
-    b_1 = point_to_rad(x, z)  
+        # b_1 : angle between +ve x-axis and len_B (0 <= b_1 < 2pi)
+        # b_2 : angle between len_B and link_2
+        # b_3 : angle between link_2 and link_3
+        b_1 = point_to_rad(x, z)  
 
-    b_2 = m.acos((link.upper_leg_length**2 + len_B**2 -link.lower_leg_length**2) / (2 * link.upper_leg_length * len_B)) 
-    b_3 = m.acos((link.upper_leg_length**2 + link.lower_leg_length**2 - len_B**2) / (2 * link.upper_leg_length * link.lower_leg_length))  
-
-
-    theta_2 = b_1 - b_2
-    exibe_deg(theta_2,"theta_2",0)
-    theta_3 = m.pi - b_3
-    exibe_deg(theta_3,"theta_3",0)
+        b_2 = m.acos((link.upper_leg_length**2 + len_B**2 -link.lower_leg_length**2) / (2 * link.upper_leg_length * len_B)) 
+        b_3 = m.acos((link.upper_leg_length**2 + link.lower_leg_length**2 - len_B**2) / (2 * link.upper_leg_length * link.lower_leg_length))  
 
 
-    angulos = [theta_2, theta_3]    
+        theta_2 = b_1 - b_2
+        exibe_deg(theta_2,"theta_2",0)
+        theta_3 = m.pi - b_3
+        exibe_deg(theta_3,"theta_3",0)
 
-    # modify angles to match robot's configuration (i.e., adding offsets)
-    angulos = angle_corrector(angulos)
 
-    servo_femur.angle = exibe_deg(angulos[0],"theta_2 ajustado",1)
+        angulos = [theta_2, theta_3]    
 
-    servo_tibia.angle = exibe_deg(angulos[1],"theta_3 ajustado",1)
+        # modify angles to match robot's configuration (i.e., adding offsets)
+        angulos = angle_corrector(angulos)
+
+        servo_femur.angle = exibe_deg(angulos[0],"theta_2 ajustado",1)
+
+        servo_tibia.angle = exibe_deg(angulos[1],"theta_3 ajustado",1)
+    except ValueError:
+        servo_femur.angle = 90
+        servo_tibia.angle = 90
