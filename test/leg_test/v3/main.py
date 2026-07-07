@@ -52,12 +52,12 @@ class RobotLeg:
         interpolando dos ângulos atuais até o destino.
         """
         targets = {
-            "frente_femur_dir":   70,
+            "frente_femur_dir":    43,
             "frente_angular_dir": 100,
-            "frente_tibia_dir":   90,
-            "frente_femur_esq":   110,
+            "frente_tibia_dir":    71,
+            "frente_femur_esq":   137,
             "frente_angular_esq": 105,
-            "frente_tibia_esq":   90,
+            "frente_tibia_esq":   109,
         }
         servos = {
             "frente_femur_dir":   self.frente_femur_dir,
@@ -82,13 +82,13 @@ class RobotLeg:
         """
         Move o robô para a posição de descanso.
         """
-        self.frente_femur_dir.angle   = 70
+        self.frente_femur_dir.angle   = 43
         self.frente_angular_dir.angle = 100
-        self.frente_tibia_dir.angle   = 90
+        self.frente_tibia_dir.angle   = 71
 
-        self.frente_femur_esq.angle = 110
+        self.frente_femur_esq.angle   = 137
         self.frente_angular_esq.angle = 105
-        self.frente_tibia_esq.angle = 90
+        self.frente_tibia_esq.angle   = 109
 
     def test_leg_movement(self, dict_legs = {"frente_dir": 0, "frente_esq": 0, "tras_dir": 0, "tras_esq": 0}, use_angular=True):
         """
