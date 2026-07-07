@@ -7,9 +7,9 @@ import math as m
 UPPER_LEG  = 120
 LOWER_LEG  = 130
 MAX_RADIUS = 220
-MAX_Z      = -37   # mm — posição sleep (topo da faixa de z)
+MAX_Z      = -20   # mm — posição sleep (topo da faixa de z)
 X_FIXO     =  -9   # mm — x de descanso do robô
-N_PONTOS   = 80
+N_PONTOS   = 70
 DELAY      = 0.025
 
 

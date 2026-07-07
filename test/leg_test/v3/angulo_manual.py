@@ -66,7 +66,7 @@ while True:
         # z = -80
 
         MAX_RADIUS = 220 # mm — raio máximo permitido
-        MAX_Z = -80      # mm — profundidade mínima permitida
+        MAX_Z = -20      # mm — profundidade mínima permitida
 
         if z > MAX_Z:
             z = MAX_Z
