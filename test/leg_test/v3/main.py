@@ -46,19 +46,27 @@ class RobotLeg:
         self.frente_angular_esq.angle = 105
         self.frente_tibia_esq.angle = 90
 
-    def smooth_sleep_robot(self, n_steps=60, delay=0.02):
+    def smooth_default_position(self, n_steps=60, delay=0.02):
         """
-        Move o robô para a posição de descanso de forma gradual,
-        interpolando dos ângulos atuais até o destino.
+        Move o robô para a posição padrão de forma gradual,
+        usando uma curva ease-in-out (smoothstep) para evitar picos de corrente.
         """
         targets = {
-            "frente_femur_dir":    43,
+            "frente_femur_dir":    90,
             "frente_angular_dir": 100,
-            "frente_tibia_dir":    71,
-            "frente_femur_esq":   137,
+            "frente_tibia_dir":    90,
+            "frente_femur_esq":    90,
             "frente_angular_esq": 105,
-            "frente_tibia_esq":   109,
+            "frente_tibia_esq":    90,
         }
+        self._smooth_move(targets, n_steps, delay)
+
+    def _smooth_move(self, targets, n_steps=60, delay=0.02):
+        """
+        Move os servos dos ângulos atuais até os alvos de forma gradual,
+        usando uma curva smoothstep (ease-in-out: 3t² - 2t³) para
+        acelerar e desacelerar suavemente, evitando picos de corrente.
+        """
         servos = {
             "frente_femur_dir":   self.frente_femur_dir,
             "frente_angular_dir": self.frente_angular_dir,
@@ -74,21 +82,53 @@ class RobotLeg:
         }
         for step in range(1, n_steps + 1):
             t = step / n_steps
+            # Smoothstep ease-in-out: começa devagar, acelera, desacelera no final
+            t_smooth = t * t * (3.0 - 2.0 * t)
             for name, srv in servos.items():
-                srv.angle = starts[name] + (targets[name] - starts[name]) * t
+                srv.angle = starts[name] + (targets[name] - starts[name]) * t_smooth
             time.sleep(delay)
+
+    def smooth_flexion_start(self, n_steps=60, delay=0.02):
+        """
+        Move o robô para a posição inicial de flexão de forma gradual,
+        usando uma curva ease-in-out (smoothstep) para evitar picos de corrente.
+        """
+        targets = {
+            "frente_femur_dir":    43,
+            "frente_angular_dir": 100,
+            "frente_tibia_dir":    71,
+            "frente_femur_esq":   137,
+            "frente_angular_esq": 105,
+            "frente_tibia_esq":   109,
+        }
+        self._smooth_move(targets, n_steps, delay)
+
+    def smooth_sleep_robot(self, n_steps=60, delay=0.02):
+        """
+        Move o robô para a posição de descanso de forma gradual,
+        usando uma curva ease-in-out (smoothstep) para evitar picos de corrente.
+        """
+        targets = {
+            "frente_femur_dir":    80,
+            "frente_angular_dir":  80,
+            "frente_tibia_dir":   130,
+            "frente_femur_esq":   100,
+            "frente_angular_esq": 125,
+            "frente_tibia_esq":    60,
+        }
+        self._smooth_move(targets, n_steps, delay)
 
     def sleep_robot(self):
         """
-        Move o robô para a posição de descanso.
+        Move o robô para a posição de descanso (instantâneo).
         """
-        self.frente_femur_dir.angle   = 43
-        self.frente_angular_dir.angle = 100
-        self.frente_tibia_dir.angle   = 71
+        self.frente_femur_dir.angle   = 80
+        self.frente_angular_dir.angle = 80
+        self.frente_tibia_dir.angle   = 130
 
-        self.frente_femur_esq.angle   = 137
-        self.frente_angular_esq.angle = 105
-        self.frente_tibia_esq.angle   = 109
+        self.frente_femur_esq.angle   = 100
+        self.frente_angular_esq.angle = 125
+        self.frente_tibia_esq.angle   = 60
 
     def test_leg_movement(self, dict_legs = {"frente_dir": 0, "frente_esq": 0, "tras_dir": 0, "tras_esq": 0}, use_angular=True):
         """
@@ -204,13 +244,14 @@ if __name__ == "__main__":
             use_angular = ang_input.strip().lower() != "n"
             robot_leg.test_leg_movement(legs_to_test, use_angular=use_angular)
         elif op == "2":
-            robot_leg.set_leg_default_position()
+            robot_leg.smooth_default_position()
         elif op == "3":
-            robot_leg.sleep_robot() 
+            robot_leg.smooth_sleep_robot() 
         elif op == "4":
             leg_input = input("Pernas para testar - frente_dir, frente_esq, tras_dir, tras_esq (ex: 1,0,0,0): ")
             leg_keys = ["frente_dir", "frente_esq", "tras_dir", "tras_esq"]
             values = [v.strip() for v in leg_input.split(",")]
+            robot_leg.smooth_flexion_start()
             legs_to_test = {leg_keys[i]: int(v) for i, v in enumerate(values) if i < len(leg_keys)}
             robot_leg.test_leg_flexion(legs_to_test)
         elif op == "0":
@@ -218,4 +259,4 @@ if __name__ == "__main__":
             break
         else:
             print("Opção inválida. Tente novamente.")
-    robot_leg.sleep_robot()
+    robot_leg.smooth_sleep_robot()

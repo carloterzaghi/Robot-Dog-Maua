@@ -53,7 +53,14 @@ def _sweep(move_fn, stop_event):
     """Varre a perna ao longo do eixo Z com X fixo em X_FIXO."""
     z_fundo = -np.sqrt(max(0.0, MAX_RADIUS**2 - X_FIXO**2))
     z_topo  = MAX_Z
-    move_fn(X_FIXO, z_fundo)
+
+    # Rampa suave de inicialização: desce de z_topo até z_fundo
+    # usando ease (cosseno) para evitar pico de corrente no início
+    for z in _ease(z_topo, z_fundo, N_PONTOS):
+        if stop_event.is_set(): return
+        move_fn(X_FIXO, z)
+        time.sleep(DELAY)
+
     while not stop_event.is_set():
         for z in _ease(z_fundo, z_topo, N_PONTOS):
             if stop_event.is_set(): return
