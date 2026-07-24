@@ -198,6 +198,25 @@ class RobotLeg:
                 t.join()
             self.smooth_sleep_robot()
 
+    def test_stabilization(self):
+        """
+        Testa a estabilização lateral do robô usando o roll medido pelo
+        MPU6050 com filtro de Kalman.  Os servos angulares (canais 2 e 6)
+        são ajustados em tempo real para manter o corpo nivelado.
+        """
+        from auxiliar_funcs.stabilization import stabilize
+
+        stop_event = threading.Event()
+        t = threading.Thread(target=stabilize, args=(self, stop_event), daemon=True)
+        t.start()
+
+        try:
+            t.join()
+        except KeyboardInterrupt:
+            print("\nParado. Retornando à posição de repouso.")
+            stop_event.set()
+            t.join()
+            self.smooth_sleep_robot()
 
 
 
@@ -225,12 +244,16 @@ if __name__ == "__main__":
 
     op = ""
 
+    print("\nMovendo para posição inicial...")
+    robot_leg.smooth_sleep_robot()
+
     while op != "0":
         print("\nEscolha uma opção:")
         print("1 - Testar pernas (locomoção)")
         print("2 - Modo Default")
         print("3 - Modo Sleep")
         print("4 - Flexão de pernas (varredura de eixo)")
+        print("5 - Estabilização lateral (roll + pitch + Filtro de Kalman)")
         print("0 - Sair")
 
         op = input("Opção: ")
@@ -254,6 +277,10 @@ if __name__ == "__main__":
             robot_leg.smooth_flexion_start()
             legs_to_test = {leg_keys[i]: int(v) for i, v in enumerate(values) if i < len(leg_keys)}
             robot_leg.test_leg_flexion(legs_to_test)
+        elif op == "5":
+            print("\nIniciando estabilização lateral...")
+            robot_leg.smooth_default_position()
+            robot_leg.test_stabilization()
         elif op == "0":
             print("Saindo...")
             break
