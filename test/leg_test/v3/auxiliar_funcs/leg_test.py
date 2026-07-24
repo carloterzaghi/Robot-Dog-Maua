@@ -3,6 +3,18 @@ import numpy as np
 from numpy.linalg import norm
 import math as m
 
+
+def _ease(start, end, n):
+    """Interpolação cosseno: devagar nas extremidades, rápido no meio."""
+    t = (1 - np.cos(np.linspace(0, np.pi, n))) / 2
+    return start + (end - start) * t
+
+
+# ── Parâmetros da rampa de inicialização ──────────────────────────────────────
+N_RAMP    = 40      # quantidade de passos da rampa
+RAMP_DELAY = 0.025  # intervalo entre passos da rampa (s)
+
+
 def frente_dir(self, stop_event, use_angular=True):
     # ── Parâmetros da perna ───────────────────────────────────────────────────────
     UPPER_LEG  = 120
@@ -56,11 +68,50 @@ def frente_dir(self, stop_event, use_angular=True):
         self.frente_femur_dir.angle = angulos[0] * 180 / m.pi
         self.frente_tibia_dir.angle = angulos[1] * 180 / m.pi - 8
 
-    print("Indo para posição inicial...")
-    move_leg(0, Z_APOIO)
-    if use_angular:
-        self.frente_angular_dir.angle = ANG_MIN
-    time.sleep(1)
+    # ── Rampa suave de inicialização ─────────────────────────────────────────────
+    # Interpola diretamente os ângulos dos servos (posição atual → alvo)
+    # usando ease (cosseno) para evitar pico de corrente no arranque.
+    print("Indo para posição inicial (rampa suave)...")
+
+    # Calcula ângulos-alvo via IK para o início do swing (X_ATRAS, Z_APOIO)
+    x_init, z_init = X_ATRAS, Z_APOIO
+    if z_init > MAX_Z:
+        z_init = MAX_Z
+    len_B = norm([x_init, 0, z_init])
+    if len_B > MAX_RADIUS:
+        scale = MAX_RADIUS / len_B
+        x_init *= scale
+        z_init *= scale
+        len_B = MAX_RADIUS
+    arg_b2 = np.clip((UPPER_LEG**2 + len_B**2 - LOWER_LEG**2) / (2 * UPPER_LEG * len_B), -1, 1)
+    arg_b3 = np.clip((UPPER_LEG**2 + LOWER_LEG**2 - len_B**2) / (2 * UPPER_LEG * LOWER_LEG), -1, 1)
+    b_1 = point_to_rad(x_init, z_init)
+    b_2 = m.acos(arg_b2)
+    b_3 = m.acos(arg_b3)
+    theta_2 = b_1 - b_2
+    theta_3 = m.pi - b_3
+    angulos_alvo = angle_corrector([theta_2, theta_3])
+    femur_alvo = angulos_alvo[0] * 180 / m.pi
+    tibia_alvo = angulos_alvo[1] * 180 / m.pi - 8
+    angular_alvo = ANG_MIN if use_angular else 100  # 100° = posição fixa sem angular
+
+    # Lê ângulos atuais (fallback para o alvo caso None)
+    femur_atual   = self.frente_femur_dir.angle   if self.frente_femur_dir.angle   is not None else femur_alvo
+    tibia_atual   = self.frente_tibia_dir.angle   if self.frente_tibia_dir.angle   is not None else tibia_alvo
+    angular_atual = self.frente_angular_dir.angle if self.frente_angular_dir.angle is not None else angular_alvo
+
+    # Interpola suavemente cada servo (angular sempre é rampado)
+    femur_ramp   = _ease(femur_atual,   femur_alvo,   N_RAMP)
+    tibia_ramp   = _ease(tibia_atual,   tibia_alvo,   N_RAMP)
+    angular_ramp = _ease(angular_atual, angular_alvo, N_RAMP)
+
+    for i in range(N_RAMP):
+        if stop_event.is_set():
+            return
+        self.frente_femur_dir.angle = femur_ramp[i]
+        self.frente_tibia_dir.angle = tibia_ramp[i]
+        self.frente_angular_dir.angle = angular_ramp[i]
+        time.sleep(RAMP_DELAY)
 
     print("Iniciando locomoção. Ctrl+C para parar.\n")
     while not stop_event.is_set():
@@ -140,15 +191,68 @@ def frente_esq(self, stop_event, use_angular=True):
         self.frente_femur_esq.angle = 180 - angulos[0] * 180 / m.pi
         self.frente_tibia_esq.angle = 180 - (angulos[1] * 180 / m.pi - 8)
 
-    print("Indo para posição inicial (esq)...")
-    move_leg(0, Z_APOIO)
-    if use_angular:
-        self.frente_angular_esq.angle = ANG_MAX  # posição inicial espelhada
-    time.sleep(1)
+    # ── Rampa suave de inicialização ─────────────────────────────────────────────
+    # Interpola diretamente os ângulos dos servos (posição atual → alvo)
+    # usando ease (cosseno) para evitar pico de corrente no arranque.
+    print("Indo para posição inicial (esq, rampa suave)...")
 
-    print("Iniciando locomoção (esq). Ctrl+C para parar.\n")
+    # Calcula ângulos-alvo via IK para o início do apoio (X_FRENTE, Z_APOIO)
+    # A esq começa no apoio (defasada 180° em relação à dir)
+    x_init, z_init = X_FRENTE, Z_APOIO
+    if z_init > MAX_Z:
+        z_init = MAX_Z
+    len_B = norm([x_init, 0, z_init])
+    if len_B > MAX_RADIUS:
+        scale = MAX_RADIUS / len_B
+        x_init *= scale
+        z_init *= scale
+        len_B = MAX_RADIUS
+    arg_b2 = np.clip((UPPER_LEG**2 + len_B**2 - LOWER_LEG**2) / (2 * UPPER_LEG * len_B), -1, 1)
+    arg_b3 = np.clip((UPPER_LEG**2 + LOWER_LEG**2 - len_B**2) / (2 * UPPER_LEG * LOWER_LEG), -1, 1)
+    b_1 = point_to_rad(x_init, z_init)
+    b_2 = m.acos(arg_b2)
+    b_3 = m.acos(arg_b3)
+    theta_2 = b_1 - b_2
+    theta_3 = m.pi - b_3
+    angulos_alvo = angle_corrector([theta_2, theta_3])
+    # Ângulos espelhados para a perna esquerda
+    femur_alvo   = 180 - angulos_alvo[0] * 180 / m.pi
+    tibia_alvo   = 180 - (angulos_alvo[1] * 180 / m.pi - 8)
+    angular_alvo = ANG_MIN if use_angular else 105  # ANG_MIN = início do apoio (defasado)
+
+    # Lê ângulos atuais (fallback para o alvo caso None)
+    femur_atual   = self.frente_femur_esq.angle   if self.frente_femur_esq.angle   is not None else femur_alvo
+    tibia_atual   = self.frente_tibia_esq.angle   if self.frente_tibia_esq.angle   is not None else tibia_alvo
+    angular_atual = self.frente_angular_esq.angle if self.frente_angular_esq.angle is not None else angular_alvo
+
+    # Interpola suavemente cada servo (angular sempre é rampado)
+    femur_ramp   = _ease(femur_atual,   femur_alvo,   N_RAMP)
+    tibia_ramp   = _ease(tibia_atual,   tibia_alvo,   N_RAMP)
+    angular_ramp = _ease(angular_atual, angular_alvo, N_RAMP)
+
+    for i in range(N_RAMP):
+        if stop_event.is_set():
+            return
+        self.frente_femur_esq.angle = femur_ramp[i]
+        self.frente_tibia_esq.angle = tibia_ramp[i]
+        self.frente_angular_esq.angle = angular_ramp[i]
+        time.sleep(RAMP_DELAY)
+
+    print("Iniciando locomoção (esq — defasada). Ctrl+C para parar.\n")
     while not stop_event.is_set():
-        # Fase 1 — Swing: angular espelhado ANG_MAX → ANG_MIN (110 → 60)
+        # Fase 1 — Apoio: pé no chão, empurra para trás (frente → atrás)
+        # Acontece enquanto a dir está no swing (subindo)
+        ang_apoio = np.linspace(ANG_MIN, ANG_MAX, N_PONTOS)
+        for i, x in enumerate(np.linspace(X_FRENTE, X_ATRAS, N_PONTOS)):
+            if stop_event.is_set():
+                return
+            move_leg(x, Z_APOIO)
+            if use_angular:
+                self.frente_angular_esq.angle = ang_apoio[i]
+            time.sleep(DELAY)
+
+        # Fase 2 — Swing: arco senoidal em z (atrás → frente)
+        # Acontece enquanto a dir está no apoio (empurrando)
         ang_swing = np.linspace(ANG_MAX, ANG_MIN, N_PONTOS)
         for i, t in enumerate(np.linspace(0, np.pi, N_PONTOS)):
             if stop_event.is_set():
@@ -158,16 +262,6 @@ def frente_esq(self, stop_event, use_angular=True):
             move_leg(x, z)
             if use_angular:
                 self.frente_angular_esq.angle = ang_swing[i]
-            time.sleep(DELAY)
-
-        # Fase 2 — Apoio: angular espelhado ANG_MIN → ANG_MAX (60 → 110)
-        ang_apoio = np.linspace(ANG_MIN, ANG_MAX, N_PONTOS)
-        for i, x in enumerate(np.linspace(X_FRENTE, X_ATRAS, N_PONTOS)):
-            if stop_event.is_set():
-                return
-            move_leg(x, Z_APOIO)
-            if use_angular:
-                self.frente_angular_esq.angle = ang_apoio[i]
             time.sleep(DELAY)
 
 def tras_dir(self, stop_event):
