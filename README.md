@@ -191,6 +191,140 @@ sudo systemctl enable bluetooth
 
 ---
 
+## 📶 Configuração de Rede WiFi e Modo AP
+
+O Raspberry Pi é configurado para **sempre tentar conectar à rede principal** ao inicializar e, caso não encontre a rede, **ativar automaticamente um Access Point (AP)** para permitir acesso direto.
+
+### Rede Principal
+
+| Parâmetro | Valor |
+|---|---|
+| SSID | `dogwifi` |
+| Senha | `dogwifi13579` |
+| Prioridade | 100 (máxima) |
+
+> ℹ️ O sistema operacional utiliza **NetworkManager** (verificado via `systemctl is-active NetworkManager`).
+
+### 1. Configurar a rede WiFi principal
+
+```bash
+# Conectar e salvar a rede
+sudo nmcli dev wifi connect "dogwifi" password "dogwifi13579"
+
+# Definir autoconexão com prioridade máxima
+sudo nmcli connection modify "dogwifi" connection.autoconnect yes
+sudo nmcli connection modify "dogwifi" connection.autoconnect-priority 100
+```
+
+### 2. Criar o perfil de Access Point (Hotspot)
+
+O NetworkManager gerencia o modo AP diretamente, sem necessidade de configurar `hostapd` manualmente:
+
+```bash
+sudo nmcli connection add \
+  type wifi \
+  ifname wlan0 \
+  con-name "RobotDog-AP" \
+  autoconnect no \
+  wifi.mode ap \
+  wifi.ssid "RobotDog-AP" \
+  wifi-sec.key-mgmt wpa-psk \
+  wifi-sec.psk "robotdog123" \
+  ipv4.method shared \
+  ipv4.addresses 192.168.4.1/24
+```
+
+| Parâmetro AP | Valor |
+|---|---|
+| SSID | `RobotDog-AP` |
+| Senha | `robotdog123` |
+| IP do Raspberry | `192.168.4.1` |
+| Faixa DHCP | `192.168.4.2 – 192.168.4.20` |
+
+### 3. Script de Fallback Automático
+
+Crie o script que verifica a conexão e ativa o AP se necessário:
+
+```bash
+sudo nano /usr/local/bin/wifi-fallback.sh
+```
+
+```bash
+#!/bin/bash
+
+TIMEOUT=30
+LOG="/var/log/wifi-fallback.log"
+
+echo "[$(date)] Verificando conexão WiFi..." >> $LOG
+
+# Aguarda o sistema tentar conectar
+sleep $TIMEOUT
+
+# Verifica se está conectado a alguma rede WiFi (cliente)
+CONNECTED=$(nmcli -t -f ACTIVE,SSID dev wifi | grep "^yes" | grep -v "RobotDog-AP")
+
+if [ -z "$CONNECTED" ]; then
+    echo "[$(date)] Sem conexão WiFi. Ativando modo AP (RobotDog-AP)..." >> $LOG
+    sudo nmcli connection up "RobotDog-AP"
+    echo "[$(date)] AP ativado. IP: 192.168.4.1" >> $LOG
+else
+    echo "[$(date)] Conectado: $CONNECTED" >> $LOG
+    # Garante que o AP está desligado
+    sudo nmcli connection down "RobotDog-AP" 2>/dev/null
+fi
+```
+
+```bash
+sudo chmod +x /usr/local/bin/wifi-fallback.sh
+```
+
+### 4. Serviço systemd para execução no boot
+
+```bash
+sudo nano /etc/systemd/system/wifi-fallback.service
+```
+
+```ini
+[Unit]
+Description=WiFi Fallback para modo AP
+After=NetworkManager.service
+Wants=NetworkManager-wait-online.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wifi-fallback.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable wifi-fallback.service
+sudo systemctl start wifi-fallback.service
+```
+
+### Fluxo de Conexão
+
+```
+Boot → NetworkManager sobe
+  └─► Tenta conectar "dogwifi" (prioridade 100)
+        ├─► ✅ Conectou → opera normalmente
+        └─► ❌ Sem rede após 30s → ativa "RobotDog-AP"
+                                      ├─► SSID:  RobotDog-AP
+                                      ├─► Senha: robotdog123
+                                      └─► IP:    192.168.4.1
+```
+
+### Verificar logs do fallback
+
+```bash
+cat /var/log/wifi-fallback.log
+```
+
+---
+
 ## 🚀 Como Usar
 
 ```bash
