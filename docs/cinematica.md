@@ -1,6 +1,6 @@
 # Cinemática do Robô Quadrúpede - Robot Dog Mauá
 
-> Documentação dos cálculos de cinemática implementados em [`test/leg_test/v3/`](test/leg_test/v3), responsáveis por toda a movimentação do robô.
+> Documentação dos cálculos de cinemática implementados em [`test/leg_test/v3/`](../test/leg_test/v3), responsáveis por toda a movimentação do robô.
 
 ---
 
@@ -141,7 +141,7 @@ $$
 
 ### 3.4 Implementação no código
 
-A função [`_ik(x, z)`](test/leg_test/v3/auxiliar_funcs/leg_flexion.py#L33-L49) encapsula todo o cálculo:
+A função [`_ik(x, z)`](../test/leg_test/v3/auxiliar_funcs/leg_flexion.py#L33-L49) encapsula todo o cálculo:
 
 ```python
 def _ik(x, z):
@@ -167,7 +167,7 @@ def _ik(x, z):
 
 Os ângulos θ₂ e θ₃ calculados pela IK estão no referencial matemático padrão (eixo +X horizontal). Porém, os servos estão montados com offsets mecânicos, então é necessário corrigir.
 
-A função [`_angle_corrector(angles)`](test/leg_test/v3/auxiliar_funcs/leg_flexion.py#L27-L30) aplica as correções:
+A função [`_angle_corrector(angles)`](../test/leg_test/v3/auxiliar_funcs/leg_flexion.py#L27-L30) aplica as correções:
 
 ### θ₂ corrigido (fêmur)
 
@@ -210,8 +210,7 @@ servo_femur_esq.angle = 180 − θ₂_corrigido × (180/π)
 servo_tibia_esq.angle = 180 − (θ₃_corrigido × (180/π) − 8)
 ```
 
-Referência: [leg_flexion.py, linhas 83–88](
-test/leg_test/v3/auxiliar_funcs/leg_flexion.py#L83-L88)
+Referência: [leg_flexion.py, linhas 83–88](../test/leg_test/v3/auxiliar_funcs/leg_flexion.py#L83-L88)
 
 ---
 
@@ -230,7 +229,7 @@ Na **locomoção**, o servo angular oscila entre os limites de forma sincronizad
 
 ## 7. Cinemática da Marcha (Gait)
 
-A locomoção é implementada em [leg_test.py](test/leg_test/v3/auxiliar_funcs/leg_test.py) usando um **gait bípede alternado** (trot-like) com as pernas frontais defasadas em 180°.
+A locomoção é implementada em [leg_test.py](../test/leg_test/v3/auxiliar_funcs/leg_test.py) usando um **gait bípede alternado** (trot-like) com as pernas frontais defasadas em 180°.
 
 ### 7.1 Parâmetros da Marcha
 
@@ -314,7 +313,7 @@ Isso simula a transferência de peso lateral natural do quadrúpede.
 
 ## 8. Estabilização Ativa (Roll + Pitch + Filtro de Kalman)
 
-O módulo [stabilization.py](test/leg_test/v3/auxiliar_funcs/stabilization.py) implementa estabilização em tempo real usando o **MPU6050** (acelerômetro + giroscópio) com **filtro de Kalman**.
+O módulo [stabilization.py](../test/leg_test/v3/auxiliar_funcs/stabilization.py) implementa estabilização em tempo real usando o **MPU6050** (acelerômetro + giroscópio) com **filtro de Kalman**.
 
 ### 8.1 Filtro de Kalman
 
@@ -331,7 +330,7 @@ O filtro combina as leituras do acelerômetro (baixa frequência, sem drift) e d
 | `Q_bias` | 0.003 | Variação esperada do bias |
 | `R_measure` | 0.03 | Ruído da medição do acelerômetro |
 
-Referência: [classe _KalmanFilter](test/leg_test/v3/auxiliar_funcs/stabilization.py#L61-L87)
+Referência: [classe _KalmanFilter](../test/leg_test/v3/auxiliar_funcs/stabilization.py#L61-L87)
 
 ### 8.2 Cálculo do Roll e Pitch a partir do Acelerômetro
 
@@ -406,7 +405,7 @@ Para evitar picos de corrente e movimentos bruscos, o código implementa duas cu
 
 ### 9.1 Smoothstep (Ease-in-out) — `3t² − 2t³`
 
-Usada nas transições de posição ([`_smooth_move`](test/leg_test/v3/main.py#L64-L89)):
+Usada nas transições de posição ([`_smooth_move`](../test/leg_test/v3/main.py#L64-L89)):
 
 $$
 s(t) = 3t^2 - 2t^3, \quad t \in [0, 1]
@@ -420,7 +419,7 @@ $$
 
 ### 9.2 Interpolação Cosseno (Ease) — `(1 − cos(πt))/2`
 
-Usada nas rampas de inicialização e varredura de eixos ([`_ease`](test/leg_test/v3/auxiliar_funcs/leg_flexion.py#L16-L19)):
+Usada nas rampas de inicialização e varredura de eixos ([`_ease`](../test/leg_test/v3/auxiliar_funcs/leg_flexion.py#L16-L19)):
 
 $$
 s(t) = \frac{1 - \cos(\pi t)}{2}, \quad t \in [0, 1]
@@ -477,10 +476,10 @@ O código implementa várias proteções para evitar que os servos recebam ângu
 
 | Módulo | Arquivo | Responsabilidade |
 |--------|---------|-----------------|
-| Classe principal | [main.py](/test/leg_test/v3/main.py) | `RobotLeg`, posições, smooth moves |
-| IK manual | [angulo_manual.py](test/leg_test/v3/angulo_manual.py) | IK interativa com input X/Z |
-| Flexão (varredura) | [leg_flexion.py](test/leg_test/v3/auxiliar_funcs/leg_flexion.py) | `_ik()`, sweep do eixo Z |
-| Marcha (locomoção) | [leg_test.py](test/leg_test/v3/auxiliar_funcs/leg_test.py) | Gait bípede com swing + apoio |
-| Estabilização | [stabilization.py](test/leg_test/v3/auxiliar_funcs/stabilization.py) | Kalman, roll, pitch, IK em tempo real |
-| Controle PS3 | [ps3_leg_flexion.py](test/leg_test/v3/ps3_leg_flexion.py) | Flexão via analógico do controle |
-| Mecanismo (4-bar) | [angulo_manual.py (Leg_linkage)](test/leg_test/v3/angulo_manual.py#L34-L55) | Parâmetros do mecanismo de 4 barras |
+| Classe principal | [main.py](../test/leg_test/v3/main.py) | `RobotLeg`, posições, smooth moves |
+| IK manual | [angulo_manual.py](../test/leg_test/v3/angulo_manual.py) | IK interativa com input X/Z |
+| Flexão (varredura) | [leg_flexion.py](../test/leg_test/v3/auxiliar_funcs/leg_flexion.py) | `_ik()`, sweep do eixo Z |
+| Marcha (locomoção) | [leg_test.py](../test/leg_test/v3/auxiliar_funcs/leg_test.py) | Gait bípede com swing + apoio |
+| Estabilização | [stabilization.py](../test/leg_test/v3/auxiliar_funcs/stabilization.py) | Kalman, roll, pitch, IK em tempo real |
+| Controle PS3 | [ps3_leg_flexion.py](../test/leg_test/v3/ps3_leg_flexion.py) | Flexão via analógico do controle |
+| Mecanismo (4-bar) | [angulo_manual.py (Leg_linkage)](../test/leg_test/v3/angulo_manual.py#L34-L55) | Parâmetros do mecanismo de 4 barras |
