@@ -21,7 +21,13 @@ class RobotLeg:
                 "frente_tibia_dir": kit.servo[3],
                 "frente_femur_esq": kit.servo[5],
                 "frente_angular_esq": kit.servo[6],
-                "frente_tibia_esq": kit.servo[7]
+                "frente_tibia_esq": kit.servo[7],
+                "tras_femur_dir": kit.servo[9],
+                "tras_angular_dir": kit.servo[10],
+                "tras_tibia_dir": kit.servo[11],
+                "tras_femur_esq": kit.servo[13],
+                "tras_angular_esq": kit.servo[14],
+                "tras_tibia_esq": kit.servo[15],
             }
 
         # ── Servos da perna frontal direita ─────────────────────────────────────────────────────
@@ -33,18 +39,16 @@ class RobotLeg:
         self.frente_femur_esq   = dict_servos["frente_femur_esq"]
         self.frente_angular_esq = dict_servos["frente_angular_esq"]
         self.frente_tibia_esq   = dict_servos["frente_tibia_esq"]
-    
-    def set_leg_default_position(self):
-        """
-        Move a perna do robô para a posição padrão.
-        """
-        self.frente_femur_dir.angle   = 90
-        self.frente_angular_dir.angle = 100
-        self.frente_tibia_dir.angle   = 90
 
-        self.frente_femur_esq.angle = 90
-        self.frente_angular_esq.angle = 105
-        self.frente_tibia_esq.angle = 90
+        # ── Servos da perna traseira direita ─────────────────────────────────────────────────────
+        self.tras_femur_dir   = dict_servos["tras_femur_dir"]
+        self.tras_angular_dir = dict_servos["tras_angular_dir"]
+        self.tras_tibia_dir   = dict_servos["tras_tibia_dir"]
+
+        # ── Servos da perna traseira esquerda ─────────────────────────────────────────────────────
+        self.tras_femur_esq   = dict_servos["tras_femur_esq"]
+        self.tras_angular_esq = dict_servos["tras_angular_esq"]
+        self.tras_tibia_esq   = dict_servos["tras_tibia_esq"]
 
     def smooth_default_position(self, n_steps=60, delay=0.02):
         """
@@ -58,6 +62,12 @@ class RobotLeg:
             "frente_femur_esq":    90,
             "frente_angular_esq": 105,
             "frente_tibia_esq":    90,
+            "tras_femur_dir":    90,
+            "tras_angular_dir": 100,
+            "tras_tibia_dir":    90,
+            "tras_femur_esq":    90,
+            "tras_angular_esq": 105,
+            "tras_tibia_esq":    90,
         }
         self._smooth_move(targets, n_steps, delay)
 
@@ -74,6 +84,12 @@ class RobotLeg:
             "frente_femur_esq":   self.frente_femur_esq,
             "frente_angular_esq": self.frente_angular_esq,
             "frente_tibia_esq":   self.frente_tibia_esq,
+            "tras_femur_dir":   self.tras_femur_dir,
+            "tras_angular_dir": self.tras_angular_dir,
+            "tras_tibia_dir":   self.tras_tibia_dir,
+            "tras_femur_esq":   self.tras_femur_esq,
+            "tras_angular_esq": self.tras_angular_esq,
+            "tras_tibia_esq":   self.tras_tibia_esq,
         }
         # Lê ângulo atual; usa o alvo como fallback se ainda não foi definido
         starts = {
