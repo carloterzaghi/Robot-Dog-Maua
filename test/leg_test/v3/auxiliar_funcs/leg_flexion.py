@@ -14,9 +14,10 @@ DELAY      = 0.025
 
 
 def _ease(start, end, n):
-    """Interpolação cosseno: devagar nas extremidades, rápido no meio."""
-    t = (1 - np.cos(np.linspace(0, np.pi, n))) / 2
-    return start + (end - start) * t
+    """Interpolação smootherstep (C²): aceleração zero nas extremidades, sem pico de corrente."""
+    t = np.linspace(0, 1, n)
+    t_smooth = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+    return start + (end - start) * t_smooth
 
 
 def _point_to_rad(p1, p2):

@@ -188,7 +188,7 @@ def stabilize(robot_leg, stop_event):
             if stop_event.is_set():
                 return
             t = step / N_RAMP
-            s = t * t * (3.0 - 2.0 * t)  # smoothstep
+            s = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)  # smootherstep (C²)
 
             robot_leg.frente_angular_dir.angle = dir_ang_atual + (ANG_DIR_CENTER   - dir_ang_atual) * s
             robot_leg.frente_angular_esq.angle = esq_ang_atual + (ANG_ESQ_CENTER   - esq_ang_atual) * s

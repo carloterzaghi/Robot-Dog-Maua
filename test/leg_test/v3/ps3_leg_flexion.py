@@ -110,8 +110,10 @@ def smooth_sleep(n_steps: int = 60, delay: float = 0.02):
     }
     for step in range(1, n_steps + 1):
         t = step / n_steps
+        # Smootherstep (C²): aceleração zero nas extremidades, sem pico de corrente
+        t_smooth = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
         for name, srv in servos.items():
-            srv.angle = starts[name] + (targets[name] - starts[name]) * t
+            srv.angle = starts[name] + (targets[name] - starts[name]) * t_smooth
         time.sleep(delay)
 
 
