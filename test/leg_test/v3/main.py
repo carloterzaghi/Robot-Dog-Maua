@@ -53,7 +53,7 @@ class RobotLeg:
     def smooth_default_position(self, n_steps=60, delay=0.02):
         """
         Move o robô para a posição padrão de forma gradual,
-        usando uma curva ease-in-out (smoothstep) para evitar picos de corrente.
+        usando uma curva ease-in-out (smootherstep) para evitar picos de corrente.
         """
         targets = {
             "frente_femur_dir":    90,
@@ -74,7 +74,7 @@ class RobotLeg:
     def _smooth_move(self, targets, n_steps=60, delay=0.02):
         """
         Move os servos dos ângulos atuais até os alvos de forma gradual,
-        usando uma curva smoothstep (ease-in-out: 3t² - 2t³) para
+        usando uma curva smootherstep (ease-in-out: 6t⁵ - 15t⁴ + 10t³) para
         acelerar e desacelerar suavemente, evitando picos de corrente.
         """
         servos = {
@@ -91,23 +91,26 @@ class RobotLeg:
             "tras_angular_esq": self.tras_angular_esq,
             "tras_tibia_esq":   self.tras_tibia_esq,
         }
+        # Filtra apenas os servos que estão presentes nos alvos
+        active_servos = {name: srv for name, srv in servos.items() if name in targets}
+
         # Lê ângulo atual; usa o alvo como fallback se ainda não foi definido
         starts = {
             name: (srv.angle if srv.angle is not None else targets[name])
-            for name, srv in servos.items()
+            for name, srv in active_servos.items()
         }
         for step in range(1, n_steps + 1):
             t = step / n_steps
-            # Smoothstep ease-in-out: começa devagar, acelera, desacelera no final
-            t_smooth = t * t * (3.0 - 2.0 * t)
-            for name, srv in servos.items():
+            # Smootherstep ease-in-out (C²): começa devagar, acelera, desacelera no final
+            t_smooth = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+            for name, srv in active_servos.items():
                 srv.angle = starts[name] + (targets[name] - starts[name]) * t_smooth
             time.sleep(delay)
 
     def smooth_flexion_start(self, n_steps=60, delay=0.02):
         """
         Move o robô para a posição inicial de flexão de forma gradual,
-        usando uma curva ease-in-out (smoothstep) para evitar picos de corrente.
+        usando uma curva ease-in-out (smootherstep) para evitar picos de corrente.
         """
         targets = {
             "frente_femur_dir":    43,
@@ -122,7 +125,7 @@ class RobotLeg:
     def smooth_sleep_robot(self, n_steps=60, delay=0.02):
         """
         Move o robô para a posição de descanso de forma gradual,
-        usando uma curva ease-in-out (smoothstep) para evitar picos de corrente.
+        usando uma curva ease-in-out (smootherstep) para evitar picos de corrente.
         """
         targets = {
             "frente_femur_dir":    80,
@@ -133,18 +136,6 @@ class RobotLeg:
             "frente_tibia_esq":    60,
         }
         self._smooth_move(targets, n_steps, delay)
-
-    def sleep_robot(self):
-        """
-        Move o robô para a posição de descanso (instantâneo).
-        """
-        self.frente_femur_dir.angle   = 80
-        self.frente_angular_dir.angle = 80
-        self.frente_tibia_dir.angle   = 130
-
-        self.frente_femur_esq.angle   = 100
-        self.frente_angular_esq.angle = 125
-        self.frente_tibia_esq.angle   = 60
 
     def test_leg_movement(self, dict_legs = {"frente_dir": 0, "frente_esq": 0, "tras_dir": 0, "tras_esq": 0}, use_angular=True):
         """
