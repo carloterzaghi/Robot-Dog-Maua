@@ -14,7 +14,7 @@
 6. [Servo Angular — 3º Grau de Liberdade (Eixo Y / Roll)](#6-servo-angular--3º-grau-de-liberdade-eixo-y--roll)
 7. [Cinemática da Marcha (Gait)](#7-cinemática-da-marcha-gait)
 8. [Estabilização Ativa (Roll + Pitch + Filtro de Kalman)](#8-estabilização-ativa-roll--pitch--filtro-de-kalman)
-9. [Curvas de Suavização](#9-curvas-de-suavização)
+9. [Curvas de Suavização — Smootherstep](#9-curvas-de-suavização--smootherstep)
 10. [Limites e Proteções](#10-limites-e-proteções)
 11. [Mapa de Servos](#11-mapa-de-servos)
 12. [Referências de Código](#12-referências-de-código)
@@ -248,25 +248,36 @@ Cada perna alterna entre duas fases:
 
 #### Fase 1 — Swing (Balanço): perna no ar
 
-A perna descreve um **arco senoidal** no plano XZ, subindo e avançando simultaneamente:
+A perna descreve uma **curva de Bézier cúbica** no plano XZ, com decolagem vertical rápida e pouso suave:
 
 ```
-Z_SWING ─ ─ ─ ─●───────●  ← arco senoidal
-              ╱         ╲
-             ╱           ╲
-Z_APOIO ─ ─ ●             ● ─ ─ ─ ─
-          X_ATRAS         X_FRENTE
+         P1──────────────P2
+         ●               ●   ← pontos de controle (altura Z_SWING)
+Z_SWING ─ ╲             ╱
+            ╲           ╱
+             ╲         ╱
+Z_APOIO ─ ─  ●         ●  ─ ─ ─ ─
+          P0=X_ATRAS  P3=X_FRENTE
 ```
 
 $$
-x(i) = X_{ATRAS} + (X_{FRENTE} - X_{ATRAS}) \cdot \frac{i}{N-1}
+B(t) = (1-t)^3 P_0 + 3(1-t)^2 t\, P_1 + 3(1-t)t^2 P_2 + t^3 P_3, \quad t \in [0, 1]
 $$
 
-$$
-z(i) = Z_{APOIO} + (Z_{SWING} - Z_{APOIO}) \cdot \sin\left(\frac{\pi \cdot i}{N-1}\right)
-$$
+Os **pontos de controle** são definidos como:
 
-A cada ponto, a IK é chamada para calcular os ângulos dos servos.
+| Ponto | Coordenada (X, Z) | Papel |
+|-------|-------------------|-------|
+| **P₀** | `(X_ATRAS, Z_APOIO)` | Decolagem — pé no chão, atrás |
+| **P₁** | `(X_ATRAS, Z_SWING)` | Tangente vertical — sobe rápido sem avançar |
+| **P₂** | `(X_FRENTE, Z_SWING)` | Permanece alto antes de descer |
+| **P₃** | `(X_FRENTE, Z_APOIO)` | Pouso — pé no chão, frente |
+
+> **Por que Bézier é melhor que seno?**  
+> Com `sin(t)`, a velocidade vertical no pouso é **máxima** (`cos(π) = −1`), gerando impacto e pico de torque.  
+> Com Bézier, P₂ e P₃ compartilham a mesma tangente quase horizontal, resultando em velocidade de descida **próxima de zero** no pouso — menor impacto e menor corrente nos servos.
+
+A cada ponto amostrado, a IK é chamada para calcular os ângulos dos servos.
 
 #### Fase 2 — Apoio (Stance): perna no solo
 
@@ -399,33 +410,63 @@ graph LR
 
 ---
 
-## 9. Curvas de Suavização
+## 9. Curvas de Suavização — Smootherstep
 
-Para evitar picos de corrente e movimentos bruscos, o código implementa duas curvas de suavização:
+Todo o projeto usa **Smootherstep** de forma uniforme para todas as transições de posição, rampas de inicialização e varreduras de eixo. A função elimina descontinuidades de aceleração nas extremidades (continuidade C²), minimizando picos de corrente e trancos mecânicos.
 
-### 9.1 Smoothstep (Ease-in-out) — `3t² − 2t³`
-
-Usada nas transições de posição ([`_smooth_move`](../test/leg_test/v3/main.py#L64-L89)):
+### 9.1 Smootherstep (Ease-in-out C²) — `6t⁵ − 15t⁴ + 10t³`
 
 $$
-s(t) = 3t^2 - 2t^3, \quad t \in [0, 1]
+s(t) = 6t^5 - 15t^4 + 10t^3, \quad t \in [0, 1]
 $$
 
 $$
 \text{ângulo}(t) = \text{início} + (\text{alvo} - \text{início}) \cdot s(t)
 $$
 
-**Propriedades**: s(0)=0, s(1)=1, s'(0)=0, s'(1)=0 → começa e termina com velocidade zero.
+**Propriedades de continuidade**:
 
-### 9.2 Interpolação Cosseno (Ease) — `(1 − cos(πt))/2`
+| Derivada | t = 0 | t = 1 | Significado |
+|----------|-------|-------|-------------|
+| s(t) — posição | 0 | 1 | Percorre toda a faixa |
+| s'(t) — velocidade | **0** | **0** | Parte e para sem impulso |
+| s''(t) — aceleração | **0** | **0** | Torque cresce do zero ✅ |
 
-Usada nas rampas de inicialização e varredura de eixos ([`_ease`](../test/leg_test/v3/auxiliar_funcs/leg_flexion.py#L16-L19)):
+> **Comparação com a versão anterior:**  
+> O projeto usava **Smoothstep** (`3t² − 2t³`, C¹) para `_smooth_move` / rampa de estabilização,  
+> **interpolação cosseno** (`(1−cos πt)/2`, C¹) para `_ease` nas rampas de marcha e flexão,  
+> e interpolação **linear** (sem easing) no `smooth_sleep` de `ps3_leg_flexion.py`.  
+> Todos foram unificados para Smootherstep (C²), que garante aceleração zero nas extremidades — a principal causa de pico de corrente nos servos.
 
-$$
-s(t) = \frac{1 - \cos(\pi t)}{2}, \quad t \in [0, 1]
-$$
+### 9.2 Locais de Aplicação
 
-**Propriedades**: mesma forma de S que a smoothstep, com transição ligeiramente diferente nas extremidades.
+| Arquivo | Função | Uso |
+|---------|--------|-----|
+| [main.py `_smooth_move`](../test/leg_test/v3/main.py#L102) | `t_smooth = t³(6t²−15t+10)` | Transições entre posições nomeadas |
+| [stabilization.py](../test/leg_test/v3/auxiliar_funcs/stabilization.py#L191) | `s = t³(6t²−15t+10)` | Rampa de inicialização da estabilização |
+| [leg_test.py `_ease`](../test/leg_test/v3/auxiliar_funcs/leg_test.py#L7-L11) | vetor via `np.linspace` | Rampa suave para posição inicial da marcha |
+| [leg_flexion.py `_ease`](../test/leg_test/v3/auxiliar_funcs/leg_flexion.py#L16-L20) | vetor via `np.linspace` | Rampa suave da varredura do eixo Z |
+| [ps3_leg_flexion.py `smooth_sleep`](../test/leg_test/v3/ps3_leg_flexion.py#L114) | `t_smooth = t³(6t²−15t+10)` | Movimento suave até posição de descanso |
+
+### 9.3 Implementação em Vetor (funções `_ease`)
+
+```python
+def _ease(start, end, n):
+    """Smootherstep (C²): aceleração zero nas extremidades, sem pico de corrente."""
+    t = np.linspace(0, 1, n)
+    t_smooth = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+    return start + (end - start) * t_smooth
+```
+
+### 9.4 Implementação Passo-a-Passo (loop de servo)
+
+```python
+for step in range(1, n_steps + 1):
+    t = step / n_steps
+    t_smooth = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)  # smootherstep
+    servo.angle = start + (target - start) * t_smooth
+    time.sleep(delay)
+```
 
 ---
 

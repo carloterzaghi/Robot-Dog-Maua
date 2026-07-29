@@ -5,9 +5,26 @@ import math as m
 
 
 def _ease(start, end, n):
-    """Interpolação cosseno: devagar nas extremidades, rápido no meio."""
-    t = (1 - np.cos(np.linspace(0, np.pi, n))) / 2
-    return start + (end - start) * t
+    """Interpolação smootherstep (C²): aceleração zero nas extremidades, sem pico de corrente."""
+    t = np.linspace(0, 1, n)
+    t_smooth = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+    return start + (end - start) * t_smooth
+
+
+def _cubic_bezier(P0, P1, P2, P3, n):
+    """
+    Gera n pontos ao longo de uma curva de Bézier cúbica 2D.
+    Cada Pi é um array [x, z].  Retorna (x_array, z_array).
+
+    B(t) = (1-t)³·P0 + 3(1-t)²t·P1 + 3(1-t)t²·P2 + t³·P3,  t ∈ [0, 1]
+    """
+    P0, P1, P2, P3 = (np.asarray(p, dtype=float) for p in (P0, P1, P2, P3))
+    t = np.linspace(0, 1, n).reshape(-1, 1)
+    pts = ((1 - t)**3 * P0 +
+           3 * (1 - t)**2 * t * P1 +
+           3 * (1 - t) * t**2 * P2 +
+           t**3 * P3)
+    return pts[:, 0], pts[:, 1]
 
 
 # ── Parâmetros da rampa de inicialização ──────────────────────────────────────
@@ -115,27 +132,34 @@ def frente_dir(self, stop_event, use_angular=True):
 
     print("Iniciando locomoção. Ctrl+C para parar.\n")
     while not stop_event.is_set():
-            # Fase 1 — Swing: arco senoidal em z (atrás → frente)
-            ang_swing = np.linspace(ANG_MIN, ANG_MAX, N_PONTOS)
-            for i, t in enumerate(np.linspace(0, np.pi, N_PONTOS)):
-                if stop_event.is_set():
-                    return
-                x = X_ATRAS + (X_FRENTE - X_ATRAS) * i / (N_PONTOS - 1)
-                z = Z_APOIO + (Z_SWING - Z_APOIO) * np.sin(t)
-                move_leg(x, z)
-                if use_angular:
-                    self.frente_angular_dir.angle = ang_swing[i]
-                time.sleep(DELAY)
+        # Fase 1 — Swing: curva de Bézier cúbica (atrás → frente)
+        # P0 = decolagem, P1 = subida vertical rápida,
+        # P2 = alto antes de descer, P3 = pouso suave
+        swing_x, swing_z = _cubic_bezier(
+            P0=[X_ATRAS,  Z_APOIO],   # decolagem (chão, atrás)
+            P1=[X_ATRAS,  Z_SWING],   # sobe rápido (vertical)
+            P2=[X_FRENTE, Z_SWING],   # mantém alto até a frente
+            P3=[X_FRENTE, Z_APOIO],   # pouso (chão, frente)
+            n=N_PONTOS,
+        )
+        ang_swing = np.linspace(ANG_MIN, ANG_MAX, N_PONTOS)
+        for i in range(N_PONTOS):
+            if stop_event.is_set():
+                return
+            move_leg(swing_x[i], swing_z[i])
+            if use_angular:
+                self.frente_angular_dir.angle = ang_swing[i]
+            time.sleep(DELAY)
 
-            # Fase 2 — Apoio: pé no chão, empurra para trás (frente → atrás)
-            ang_apoio = np.linspace(ANG_MAX, ANG_MIN, N_PONTOS)
-            for i, x in enumerate(np.linspace(X_FRENTE, X_ATRAS, N_PONTOS)):
-                if stop_event.is_set():
-                    return
-                move_leg(x, Z_APOIO)
-                if use_angular:
-                    self.frente_angular_dir.angle = ang_apoio[i]
-                time.sleep(DELAY)
+        # Fase 2 — Apoio: pé no chão, empurra para trás (frente → atrás)
+        ang_apoio = np.linspace(ANG_MAX, ANG_MIN, N_PONTOS)
+        for i, x in enumerate(np.linspace(X_FRENTE, X_ATRAS, N_PONTOS)):
+            if stop_event.is_set():
+                return
+            move_leg(x, Z_APOIO)
+            if use_angular:
+                self.frente_angular_dir.angle = ang_apoio[i]
+            time.sleep(DELAY)
 
 def frente_esq(self, stop_event, use_angular=True):
     # ── Parâmetros da perna ───────────────────────────────────────────────────────
@@ -251,15 +275,20 @@ def frente_esq(self, stop_event, use_angular=True):
                 self.frente_angular_esq.angle = ang_apoio[i]
             time.sleep(DELAY)
 
-        # Fase 2 — Swing: arco senoidal em z (atrás → frente)
+        # Fase 2 — Swing: curva de Bézier cúbica (atrás → frente)
         # Acontece enquanto a dir está no apoio (empurrando)
+        swing_x, swing_z = _cubic_bezier(
+            P0=[X_ATRAS,  Z_APOIO],   # decolagem (chão, atrás)
+            P1=[X_ATRAS,  Z_SWING],   # sobe rápido (vertical)
+            P2=[X_FRENTE, Z_SWING],   # mantém alto até a frente
+            P3=[X_FRENTE, Z_APOIO],   # pouso (chão, frente)
+            n=N_PONTOS,
+        )
         ang_swing = np.linspace(ANG_MAX, ANG_MIN, N_PONTOS)
-        for i, t in enumerate(np.linspace(0, np.pi, N_PONTOS)):
+        for i in range(N_PONTOS):
             if stop_event.is_set():
                 return
-            x = X_ATRAS + (X_FRENTE - X_ATRAS) * i / (N_PONTOS - 1)
-            z = Z_APOIO + (Z_SWING - Z_APOIO) * np.sin(t)
-            move_leg(x, z)
+            move_leg(swing_x[i], swing_z[i])
             if use_angular:
                 self.frente_angular_esq.angle = ang_swing[i]
             time.sleep(DELAY)
