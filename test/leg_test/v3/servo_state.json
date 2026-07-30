@@ -1,0 +1,14 @@
+{
+    "frente_femur_dir": 80,
+    "frente_angular_dir": 70,
+    "frente_tibia_dir": 120,
+    "tras_femur_dir": 80,
+    "tras_angular_dir": 135,
+    "tras_tibia_dir": 85,
+    "frente_femur_esq": 100,
+    "frente_angular_esq": 135,
+    "frente_tibia_esq": 70,
+    "tras_femur_esq": 100,
+    "tras_angular_esq": 70,
+    "tras_tibia_esq": 80
+}
