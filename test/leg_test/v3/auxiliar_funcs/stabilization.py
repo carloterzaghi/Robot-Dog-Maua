@@ -1,11 +1,12 @@
 """
-Estabilização completa do robô usando pitch e roll (MPU6050 + filtro de Kalman).
+Estabilização completa do robô (4 pernas) usando pitch e roll (MPU6050 + filtro de Kalman).
 
-Roll  → servos angulares (canais 2 e 6) compensam inclinação lateral.
-Pitch → servos fêmur e tíbia (canais 1,3 e 5,7) compensam inclinação frontal via IK.
+Roll  → servos angulares (canais 2, 6, 10, 14) compensam inclinação lateral.
+Pitch → servos fêmur e tíbia compensam inclinação frontal via IK variando Z.
 
-Servo 2 (angular dir): Min 70° – Max 120°
-Servo 6 (angular esq): Min 90° – Max 135°
+Montagem dos servos angulares:
+  - frente_dir & tras_esq: faixa 70° a 120° (centro 95°)
+  - frente_esq & tras_dir: faixa 90° a 135° (centro 112.5°)
 """
 import time
 import math
@@ -124,14 +125,14 @@ def _ik(x, z):
 
 
 def _ik_to_servos_dir(x, z):
-    """Retorna (femur°, tibia°) para a perna DIREITA."""
+    """Retorna (femur°, tibia°) para as pernas do lado DIREITO."""
     ang = _ik(x, z)
     return (ang[0] * 180 / math.pi,
             ang[1] * 180 / math.pi - 8)
 
 
 def _ik_to_servos_esq(x, z):
-    """Retorna (femur°, tibia°) para a perna ESQUERDA (espelhada)."""
+    """Retorna (femur°, tibia°) para as pernas do lado ESQUERDO (espelhadas)."""
     ang = _ik(x, z)
     return (180 - ang[0] * 180 / math.pi,
             180 - (ang[1] * 180 / math.pi - 8))
@@ -140,14 +141,13 @@ def _ik_to_servos_esq(x, z):
 # ── Função principal de estabilização ─────────────────────────────────────────
 def stabilize(robot_leg, stop_event):
     """
-    Loop de estabilização completa (roll + pitch).
+    Loop de estabilização completa (roll + pitch) nas 4 pernas.
 
-    Roll  → ajusta servos angulares (canais 2 e 6).
-    Pitch → ajusta fêmur e tíbia (canais 1,3 / 5,7) via IK, variando a
-            altura Z da perna para compensar a inclinação frontal.
+    Roll  → ajusta servos angulares (canais 2, 6, 10, 14).
+    Pitch → ajusta fêmur e tíbia via IK variando a altura Z da perna.
 
-    Pitch positivo (nariz para baixo) → pernas estendem (Z mais negativo)
-    Pitch negativo (nariz para cima)  → pernas retraem  (Z menos negativo)
+    Pitch positivo (nariz para baixo) → frente estende, trás retrai.
+    Pitch negativo (nariz para cima)  → frente retrai, trás estende.
     """
     kalman_roll  = _KalmanFilter()
     kalman_pitch = _KalmanFilter()
@@ -156,7 +156,7 @@ def stabilize(robot_leg, stop_event):
         # Acorda o MPU6050
         bus.write_byte_data(MPU6050_ADDR, PWR_MGMT_1, 0)
         time.sleep(0.1)
-        print("MPU6050 inicializado para estabilização.\n")
+        print("MPU6050 inicializado para estabilização das 4 pernas.\n")
 
         # Leitura inicial para seed dos filtros de Kalman
         ax = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
@@ -177,12 +177,20 @@ def stabilize(robot_leg, stop_event):
         RAMP_DELAY = 0.025
 
         # Lê ângulos atuais (fallback para alvo se None)
-        dir_ang_atual = robot_leg.frente_angular_dir.angle or ANG_DIR_CENTER
-        esq_ang_atual = robot_leg.frente_angular_esq.angle or ANG_ESQ_CENTER
-        dir_fem_atual = robot_leg.frente_femur_dir.angle   or femur_dir_alvo
-        dir_tib_atual = robot_leg.frente_tibia_dir.angle   or tibia_dir_alvo
-        esq_fem_atual = robot_leg.frente_femur_esq.angle   or femur_esq_alvo
-        esq_tib_atual = robot_leg.frente_tibia_esq.angle   or tibia_esq_alvo
+        f_dir_ang_atual = robot_leg.frente_angular_dir.angle or ANG_DIR_CENTER
+        f_esq_ang_atual = robot_leg.frente_angular_esq.angle or ANG_ESQ_CENTER
+        t_dir_ang_atual = robot_leg.tras_angular_dir.angle   or ANG_ESQ_CENTER
+        t_esq_ang_atual = robot_leg.tras_angular_esq.angle   or ANG_DIR_CENTER
+
+        f_dir_fem_atual = robot_leg.frente_femur_dir.angle   or femur_dir_alvo
+        f_dir_tib_atual = robot_leg.frente_tibia_dir.angle   or tibia_dir_alvo
+        f_esq_fem_atual = robot_leg.frente_femur_esq.angle   or femur_esq_alvo
+        f_esq_tib_atual = robot_leg.frente_tibia_esq.angle   or tibia_esq_alvo
+
+        t_dir_fem_atual = robot_leg.tras_femur_dir.angle     or femur_dir_alvo
+        t_dir_tib_atual = robot_leg.tras_tibia_dir.angle     or tibia_dir_alvo
+        t_esq_fem_atual = robot_leg.tras_femur_esq.angle     or femur_esq_alvo
+        t_esq_tib_atual = robot_leg.tras_tibia_esq.angle     or tibia_esq_alvo
 
         for step in range(1, N_RAMP + 1):
             if stop_event.is_set():
@@ -190,15 +198,24 @@ def stabilize(robot_leg, stop_event):
             t = step / N_RAMP
             s = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)  # smootherstep (C²)
 
-            robot_leg.frente_angular_dir.angle = dir_ang_atual + (ANG_DIR_CENTER   - dir_ang_atual) * s
-            robot_leg.frente_angular_esq.angle = esq_ang_atual + (ANG_ESQ_CENTER   - esq_ang_atual) * s
-            robot_leg.frente_femur_dir.angle   = dir_fem_atual + (femur_dir_alvo   - dir_fem_atual) * s
-            robot_leg.frente_tibia_dir.angle   = dir_tib_atual + (tibia_dir_alvo   - dir_tib_atual) * s
-            robot_leg.frente_femur_esq.angle   = esq_fem_atual + (femur_esq_alvo   - esq_fem_atual) * s
-            robot_leg.frente_tibia_esq.angle   = esq_tib_atual + (tibia_esq_alvo   - esq_tib_atual) * s
+            robot_leg.frente_angular_dir.angle = f_dir_ang_atual + (ANG_DIR_CENTER - f_dir_ang_atual) * s
+            robot_leg.frente_angular_esq.angle = f_esq_ang_atual + (ANG_ESQ_CENTER - f_esq_ang_atual) * s
+            robot_leg.tras_angular_dir.angle   = t_dir_ang_atual + (ANG_ESQ_CENTER - t_dir_ang_atual) * s
+            robot_leg.tras_angular_esq.angle   = t_esq_ang_atual + (ANG_DIR_CENTER - t_esq_ang_atual) * s
+
+            robot_leg.frente_femur_dir.angle   = f_dir_fem_atual + (femur_dir_alvo - f_dir_fem_atual) * s
+            robot_leg.frente_tibia_dir.angle   = f_dir_tib_atual + (tibia_dir_alvo - f_dir_tib_atual) * s
+            robot_leg.frente_femur_esq.angle   = f_esq_fem_atual + (femur_esq_alvo - f_esq_fem_atual) * s
+            robot_leg.frente_tibia_esq.angle   = f_esq_tib_atual + (tibia_esq_alvo - f_esq_tib_atual) * s
+
+            robot_leg.tras_femur_dir.angle     = t_dir_fem_atual + (femur_dir_alvo - t_dir_fem_atual) * s
+            robot_leg.tras_tibia_dir.angle     = t_dir_tib_atual + (tibia_dir_alvo - t_dir_tib_atual) * s
+            robot_leg.tras_femur_esq.angle     = t_esq_fem_atual + (femur_esq_alvo - t_esq_fem_atual) * s
+            robot_leg.tras_tibia_esq.angle     = t_esq_tib_atual + (tibia_esq_alvo - t_esq_tib_atual) * s
+
             time.sleep(RAMP_DELAY)
 
-        print("Estabilização ativa (roll + pitch). Ctrl+C para parar.\n")
+        print("Estabilização ativa (4 pernas — roll + pitch). Ctrl+C para parar.\n")
 
         timer = time.time()
 
@@ -223,36 +240,55 @@ def stabilize(robot_leg, stop_event):
             roll      = kalman_roll.get_angle(roll_acc, gy, dt)
             roll_norm = _clamp(roll / ROLL_MAX_DEG, -1.0, 1.0)
 
-            ang_dir = _clamp(ANG_DIR_CENTER + roll_norm * ANG_DIR_RANGE,
-                             ANG_DIR_MIN, ANG_DIR_MAX)
-            ang_esq = _clamp(ANG_ESQ_CENTER + roll_norm * ANG_ESQ_RANGE,
-                             ANG_ESQ_MIN, ANG_ESQ_MAX)
+            ang_frente_dir = _clamp(ANG_DIR_CENTER + roll_norm * ANG_DIR_RANGE,
+                                    ANG_DIR_MIN, ANG_DIR_MAX)
+            ang_frente_esq = _clamp(ANG_ESQ_CENTER + roll_norm * ANG_ESQ_RANGE,
+                                    ANG_ESQ_MIN, ANG_ESQ_MAX)
+
+            # tras_dir se move no mesmo sentido de frente_esq (centro 112.5°)
+            # tras_esq se move no mesmo sentido de frente_dir (centro 95°)
+            ang_tras_dir   = _clamp(ANG_ESQ_CENTER - roll_norm * ANG_ESQ_RANGE,
+                                    ANG_ESQ_MIN, ANG_ESQ_MAX)
+            ang_tras_esq   = _clamp(ANG_DIR_CENTER - roll_norm * ANG_DIR_RANGE,
+                                    ANG_DIR_MIN, ANG_DIR_MAX)
 
             # ── Pitch via Kalman → fêmur e tíbia (IK) ────────────────────────
             pitch_acc  = math.degrees(math.atan2(ay, math.sqrt(ax**2 + az**2)))
             pitch      = kalman_pitch.get_angle(pitch_acc, gx, dt)
             pitch_norm = _clamp(pitch / PITCH_MAX_DEG, -1.0, 1.0)
 
-            # Pitch positivo (nariz para baixo) → Z mais negativo → pernas estendem
-            z_target = Z_NOMINAL - pitch_norm * Z_PITCH_RANGE
-            z_target = _clamp(z_target, -(MAX_RADIUS - 1), MAX_Z)
+            # Inversão do Pitch conforme solicitado:
+            z_frente = _clamp(Z_NOMINAL + pitch_norm * Z_PITCH_RANGE, -(MAX_RADIUS - 1), MAX_Z)
+            z_tras   = _clamp(Z_NOMINAL - pitch_norm * Z_PITCH_RANGE, -(MAX_RADIUS - 1), MAX_Z)
 
-            femur_dir_val, tibia_dir_val = _ik_to_servos_dir(X_NOMINAL, z_target)
-            femur_esq_val, tibia_esq_val = _ik_to_servos_esq(X_NOMINAL, z_target)
+
+            femur_frente_dir, tibia_frente_dir = _ik_to_servos_dir(X_NOMINAL, z_frente)
+            femur_frente_esq, tibia_frente_esq = _ik_to_servos_esq(X_NOMINAL, z_frente)
+
+            femur_tras_dir,   tibia_tras_dir   = _ik_to_servos_dir(X_NOMINAL, z_tras)
+            femur_tras_esq,   tibia_tras_esq   = _ik_to_servos_esq(X_NOMINAL, z_tras)
 
             # ── Aplica nos servos ─────────────────────────────────────────────
             # Roll → angulares
-            robot_leg.frente_angular_dir.angle = ang_dir
-            robot_leg.frente_angular_esq.angle = ang_esq
+            robot_leg.frente_angular_dir.angle = ang_frente_dir
+            robot_leg.frente_angular_esq.angle = ang_frente_esq
+            robot_leg.tras_angular_dir.angle   = ang_tras_dir
+            robot_leg.tras_angular_esq.angle   = ang_tras_esq
+
             # Pitch → fêmur e tíbia
-            robot_leg.frente_femur_dir.angle = femur_dir_val
-            robot_leg.frente_tibia_dir.angle = tibia_dir_val
-            robot_leg.frente_femur_esq.angle = femur_esq_val
-            robot_leg.frente_tibia_esq.angle = tibia_esq_val
+            robot_leg.frente_femur_dir.angle   = femur_frente_dir
+            robot_leg.frente_tibia_dir.angle   = tibia_frente_dir
+            robot_leg.frente_femur_esq.angle   = femur_frente_esq
+            robot_leg.frente_tibia_esq.angle   = tibia_frente_esq
+
+            robot_leg.tras_femur_dir.angle     = femur_tras_dir
+            robot_leg.tras_tibia_dir.angle     = tibia_tras_dir
+            robot_leg.tras_femur_esq.angle     = femur_tras_esq
+            robot_leg.tras_tibia_esq.angle     = tibia_tras_esq
 
             print(f"Roll={roll:+6.1f}° Pitch={pitch:+6.1f}°"
-                  f" | Ang D={ang_dir:5.1f}° E={ang_esq:5.1f}°"
-                  f" | Z={z_target:+7.1f}mm", end="\r")
+                  f" | Ang FD={ang_frente_dir:5.1f}° FE={ang_frente_esq:5.1f}°"
+                  f" TD={ang_tras_dir:5.1f}° TE={ang_tras_esq:5.1f}°", end="\r")
 
             time.sleep(LOOP_DELAY)
 

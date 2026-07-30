@@ -1,3 +1,4 @@
+import threading
 import time
 import numpy as np
 from numpy.linalg import norm
@@ -50,48 +51,77 @@ def _ik(x, z):
     return _angle_corrector([theta_2, theta_3])
 
 
-def _sweep(move_fn, stop_event):
-    """Varre a perna ao longo do eixo Z com X fixo em X_FIXO."""
+def _sweep(move_fn, stop_event, sync_barrier=None, delay_before_descent=0.0):
+    """
+    Varre a perna ao longo do eixo Z com X fixo em X_FIXO.
+
+    Em cada ciclo do loop:
+      1. Aguarda delay_before_descent (ex: 1s para patas de trás, 0s para as da frente).
+      2. Desce do topo ao fundo.
+      3. Aguarda no sync_barrier (no fundo) até que todas as patas cheguem.
+      4. Sobe do fundo ao topo todas juntas.
+      5. Repete o ciclo.
+    """
     z_fundo = -np.sqrt(max(0.0, MAX_RADIUS**2 - X_FIXO**2))
     z_topo  = MAX_Z
 
-    # Rampa suave de inicialização: desce de z_topo até z_fundo
-    # usando ease (cosseno) para evitar pico de corrente no início
-    for z in _ease(z_topo, z_fundo, N_PONTOS):
-        if stop_event.is_set(): return
-        move_fn(X_FIXO, z)
-        time.sleep(DELAY)
-
     while not stop_event.is_set():
-        for z in _ease(z_fundo, z_topo, N_PONTOS):
-            if stop_event.is_set(): return
-            move_fn(X_FIXO, z)
-            time.sleep(DELAY)
+        # ── 1. Atraso antes de descer (ex: 1s para patas de trás) ─────────────
+        if delay_before_descent > 0:
+            t_end = time.monotonic() + delay_before_descent
+            while time.monotonic() < t_end:
+                if stop_event.is_set(): return
+                time.sleep(min(0.05, t_end - time.monotonic()))
+
+        # ── 2. Desce: topo -> fundo ───────────────────────────────────────────
         for z in _ease(z_topo, z_fundo, N_PONTOS):
             if stop_event.is_set(): return
             move_fn(X_FIXO, z)
             time.sleep(DELAY)
 
+        # ── 3. Ponto de sincronização no fundo ────────────────────────────────
+        if sync_barrier is not None:
+            try:
+                sync_barrier.wait()
+            except threading.BrokenBarrierError:
+                return
 
-def frente_dir(self, stop_event):
+        # ── 4. Sobe: fundo -> topo ────────────────────────────────────────────
+        for z in _ease(z_fundo, z_topo, N_PONTOS):
+            if stop_event.is_set(): return
+            move_fn(X_FIXO, z)
+            time.sleep(DELAY)
+
+
+def frente_dir(self, stop_event, sync_barrier=None, delay_before_descent=0.0):
     def move(x, z):
         angulos = _ik(x, z)
         self.frente_femur_dir.angle = angulos[0] * 180 / m.pi
         self.frente_tibia_dir.angle = angulos[1] * 180 / m.pi - 8
-    _sweep(move, stop_event)
+    _sweep(move, stop_event, sync_barrier=sync_barrier, delay_before_descent=delay_before_descent)
 
 
-def frente_esq(self, stop_event):
+def frente_esq(self, stop_event, sync_barrier=None, delay_before_descent=0.0):
     def move(x, z):
         angulos = _ik(x, z)
         self.frente_femur_esq.angle = 180 - angulos[0] * 180 / m.pi
         self.frente_tibia_esq.angle = 180 - (angulos[1] * 180 / m.pi - 8)
-    _sweep(move, stop_event)
+    _sweep(move, stop_event, sync_barrier=sync_barrier, delay_before_descent=delay_before_descent)
 
 
-def tras_dir(self, stop_event):
-    pass
+def tras_dir(self, stop_event, sync_barrier=None, delay_before_descent=0.0):
+    def move(x, z):
+        angulos = _ik(x, z)
+        # Mesma montagem que frente_dir (lado direito, sem espelhar)
+        self.tras_femur_dir.angle = angulos[0] * 180 / m.pi
+        self.tras_tibia_dir.angle = angulos[1] * 180 / m.pi - 8
+    _sweep(move, stop_event, sync_barrier=sync_barrier, delay_before_descent=delay_before_descent)
 
 
-def tras_esq(self, stop_event):
-    pass
+def tras_esq(self, stop_event, sync_barrier=None, delay_before_descent=0.0):
+    def move(x, z):
+        angulos = _ik(x, z)
+        # Ângulos espelhados — servo montado em direção oposta (lado esquerdo)
+        self.tras_femur_esq.angle = 180 - angulos[0] * 180 / m.pi
+        self.tras_tibia_esq.angle = 180 - (angulos[1] * 180 / m.pi - 8)
+    _sweep(move, stop_event, sync_barrier=sync_barrier, delay_before_descent=delay_before_descent)
