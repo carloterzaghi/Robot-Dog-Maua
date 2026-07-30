@@ -294,7 +294,7 @@ class RobotLeg:
         Testa a flexão da perna varrendo o eixo Z com X fixo em -9 mm.
         Quando há pernas de frente E de trás selecionadas:
           1. Pernas da frente iniciam a descida imediatamente.
-          2. Pernas de trás aguardam 0.2 segundos em cada ciclo antes de descer.
+          2. Pernas de trás aguardam 0.8 segundos em cada ciclo antes de descer.
           3. Pernas da frente esperam no fundo (barrier) até as de trás chegarem.
           4. Todas sobem juntas do fundo ao topo.
           5. Repete o ciclo continuamente com o mesmo escalonamento.
@@ -309,7 +309,7 @@ class RobotLeg:
 
         # Barrier com N = total de pernas ativas (todas esperam no fundo)
         sync_barrier = threading.Barrier(n_total) if n_total > 1 else None
-        rear_delay = 0.2 if (n_front > 0 and n_rear > 0) else 0.0
+        rear_delay = 0.8 if (n_front > 0 and n_rear > 0) else 0.0
 
 
         front_threads = [
