@@ -599,13 +599,16 @@ class RobotLeg:
         pending_walk = False
         walk_start_time = 0
         last_axis_y = 0.0
-        DEBOUNCE_TIME = 0.15 # 150ms segurando o analógico para confirmar
+        DEBOUNCE_TIME = 0.40 # 400ms segurando o analógico para confirmar
+        
+        triangle_pressed = False
+        triangle_press_time = 0.0
 
         try:
             # Lemos os eventos em loop bloqueante
             for event in gamepad.read_loop():
                 
-                # Debounce temporal: aproveitamos qualquer evento (mesmo acelerômetros) para checar o tempo
+                # Debounce temporal: aproveitamos qualquer evento para checar o tempo
                 if pending_walk and (time.time() - walk_start_time > DEBOUNCE_TIME):
                     shared_state["speed"] = abs(last_axis_y)
                     shared_state["direction"] = 1
@@ -613,28 +616,42 @@ class RobotLeg:
                         print(f"Andando para FRENTE... (Força: {abs(last_axis_y):.2f})")
                         current_walking_state = 1
                     pending_walk = False
+                    
+                # Checa se o Triângulo está pressionado por 4 segundos
+                if triangle_pressed and (time.time() - triangle_press_time >= 4.0):
+                    triangle_pressed = False # Reseta para não ativar repetidas vezes
+                    if not is_standing:
+                        print("\n[Triângulo 4s] Levantando robô (Modo Caminhada)...")
+                        shared_state["speed"] = 0
+                        start_walking()
+                        is_standing = True
+                        print("Robô levantado. Use o analógico esquerdo (Cima) para andar.")
+                    else:
+                        print("\n[Triângulo 4s] Voltando para o modo sleep...")
+                        stop_walking()
+                        self.smooth_sleep_robot()
+                        is_standing = False
+                        print("Robô em repouso (sleep). Pressione [Triângulo] por 4s para levantar.")
 
                 if event.type == ecodes.EV_KEY:
                     code = event.code
-                    val  = event.value  # 1 = pressionado
+                    val  = event.value  # 1 = pressionado, 0 = solto
+                    
+                    # Lógica do Botão Triângulo (BTN_NORTH / BTN_Y / 300)
+                    if code in (ecodes.BTN_NORTH, ecodes.BTN_Y, 300):
+                        if val == 1:
+                            if not triangle_pressed:
+                                triangle_pressed = True
+                                triangle_press_time = time.time()
+                                print("Segurando Triângulo... Aguarde 4 segundos.")
+                        elif val == 0:
+                            if triangle_pressed:
+                                print("Triângulo solto antes de 4 segundos. Ação cancelada.")
+                            triangle_pressed = False
 
                     if val == 1:
-                        # Botão Triângulo (BTN_NORTH / BTN_Y / 300 no sixad)
-                        if code in (ecodes.BTN_NORTH, ecodes.BTN_Y, 300):
-                            if not is_standing:
-                                print("\n[Triângulo] Levantando robô (Modo Caminhada)...")
-                                shared_state["speed"] = 0
-                                start_walking()
-                                is_standing = True
-                                print("Robô levantado. Use o analógico esquerdo (Cima) para andar.")
-                            else:
-                                print("\n[Triângulo] Voltando para o modo sleep...")
-                                stop_walking()
-                                self.smooth_sleep_robot()
-                                is_standing = False
-                                print("Robô em repouso (sleep). Pressione [Triângulo] para levantar.")
                         # Botão Start (BTN_START / 315)
-                        elif code in (ecodes.BTN_START, 315):
+                        if code in (ecodes.BTN_START, 315):
                             print("\n[START Pressionado] Encerrando modo PS3...")
                             break
 
@@ -642,6 +659,12 @@ class RobotLeg:
                 elif event.type == ecodes.EV_ABS and is_standing:
                     # Filtra apenas o eixo Y do analógico esquerdo
                     if event.code == ecodes.ABS_Y:
+                        
+                        # Filtro de hardware: Se o valor for muito bizarro (fora de 0-255), 
+                        # é o acelerômetro 16-bit do controle mandando lixo no mesmo eixo.
+                        if event.value < -50 or event.value > 305:
+                            continue
+                            
                         raw_y = (event.value - 128.0) / 128.0
                         axis_y = deadzone(raw_y)
                         
@@ -656,7 +679,7 @@ class RobotLeg:
                                 # Se já está andando, apenas atualiza a força contínua
                                 shared_state["speed"] = abs(axis_y)
                         else:
-                            # Se a força for menor que 1.03, ou se foi só um ruído fantasma que voltou a zero, PARA.
+                            # Se a força for menor que 1.03, ou se foi só um ruído fantasma, PARA.
                             pending_walk = False
                             shared_state["speed"] = 0
                             if current_walking_state != 0:
