@@ -216,15 +216,16 @@ class RobotLeg:
         usando uma curva ease-in-out (smootherstep) para evitar picos de corrente.
         Posição calculada via IK para x=X_FIXO=-9 mm, z=MAX_Z=-20 mm.
         """
-        targets = {
-            # ── Pernas dianteiras ────────────────────────────────────────────
+        targets_frente = {
             "frente_femur_dir":    43,
             "frente_angular_dir": 100,
             "frente_tibia_dir":    71,
             "frente_femur_esq":   137,
             "frente_angular_esq": 105,
             "frente_tibia_esq":   109,
-            # ── Pernas traseiras (mesma IK, mesma geometria) ─────────────────
+        }
+        
+        targets_tras = {
             "tras_femur_dir":      43,
             "tras_angular_dir":   100,
             "tras_tibia_dir":      71,
@@ -232,7 +233,15 @@ class RobotLeg:
             "tras_angular_esq":   105,
             "tras_tibia_esq":     109,
         }
-        self._smooth_move(targets, n_steps, delay)
+        
+        # 1. Abaixa as pernas da frente
+        self._smooth_move(targets_frente, n_steps, delay)
+        
+        # 2. Espera 0.8 segundos
+        time.sleep(0.8)
+        
+        # 3. Abaixa as pernas de trás
+        self._smooth_move(targets_tras, n_steps, delay)
 
     def smooth_sleep_robot(self, n_steps=60, delay=0.02):
         """
@@ -255,12 +264,13 @@ class RobotLeg:
         }
         self._smooth_move(targets, n_steps, delay)
 
-    def test_leg_movement(self, dict_legs = {"frente_dir": 0, "frente_esq": 0, "tras_dir": 0, "tras_esq": 0}, use_angular=True):
+    def test_leg_movement(self, dict_legs={"frente_dir": 0, "frente_esq": 0, "tras_dir": 0, "tras_esq": 0}, use_angular=True):
         """
         Testa o movimento da perna do robô, movendo os servos para diferentes ângulos.
         Pernas com valor 1 são movidas simultaneamente em threads separadas.
         """
         from auxiliar_funcs.leg_test import frente_dir, frente_esq, tras_dir, tras_esq
+        import threading
 
         stop_event = threading.Event()
         leg_map = {
@@ -270,11 +280,22 @@ class RobotLeg:
             "tras_esq":   tras_esq,
         }
 
-        threads = [
-            threading.Thread(target=func, args=(self, stop_event, use_angular), daemon=True)
-            for leg, func in leg_map.items()
-            if dict_legs.get(leg) == 1
-        ]
+        active_legs = [leg for leg, enabled in dict_legs.items() if enabled == 1]
+        if not active_legs:
+            return
+
+        sync_barrier = threading.Barrier(len(active_legs))
+        threads = []
+
+        for leg in active_legs:
+            func = leg_map[leg]
+            delay_val = 0.8 if "tras" in leg else 0.0
+            t = threading.Thread(
+                target=func, 
+                args=(self, stop_event, use_angular, delay_val, sync_barrier), 
+                daemon=True
+            )
+            threads.append(t)
 
         for t in threads:
             t.start()
@@ -478,10 +499,180 @@ class RobotLeg:
             servos[name].angle = angle
             print(f"  ✓  {name} → {angle:.1f}°")
 
+    def ps3_control_mode(self):
+        """
+        Modo de controle PS3:
+        - O robô se inicia no modo smooth sleep.
+        - No modo sleep, apenas o botão O (BTN_EAST) funciona, levantando o robô (smooth_flexion_start).
+        - No modo levantado, o analógico esquerdo controla a flexão (X/Z) e o botão O faz o robô voltar ao modo sleep.
+        - Botão Start ou Ctrl+C sai do modo e retorna ao modo sleep.
+        """
+        import sys
+        import os
+        import math as m
+        import select
+        import numpy as np
 
+        # Adiciona pasta lib ao sys.path
+        _HERE = os.path.dirname(os.path.abspath(__file__))
+        _LIB  = os.path.abspath(os.path.join(_HERE, "..", "..", "..", "lib"))
+        if _LIB not in sys.path:
+            sys.path.insert(0, _LIB)
 
+        try:
+            from connect_ps3_control import ensure_connected # type: ignore
+            from evdev import InputDevice, ecodes # type: ignore
+        except ImportError as e:
+            print(f"\nErro ao importar bibliotecas do PS3 (evdev/connect_ps3_control): {e}")
+            print("Certifique-se de que o evdev está instalado e o script de conexão disponível.")
+            return
+
+        from auxiliar_funcs.leg_flexion import _ik, MAX_Z, MAX_RADIUS, X_FIXO
+
+        Z_FUNDO = float(-np.sqrt(max(0.0, MAX_RADIUS**2 - X_FIXO**2)))
+        Z_TOPO  = float(MAX_Z)
+
+        print("\nConectando ao controle PS3...")
+        device_path = ensure_connected(timeout=15)
+        if not device_path:
+            print("Falha ao conectar o controle PS3.")
+            return
+
+        try:
+            gamepad = InputDevice(device_path)
+            print(f"Controle conectado com sucesso: {gamepad.name} ({device_path})")
+        except Exception as e:
+            print(f"Erro ao acessar dispositivo do controle: {e}")
+            return
+
+        print("\n=== Modo Controle PS3 ===")
+        print(" -> Robô em modo SLEEP.")
+        print(" -> Pressione [Triângulo] para LEVANTAR o robô e iniciar locomoção.")
+        print(" -> Quando levantado, use o Analógico Esquerdo (Cima) para andar para frente.")
+        print(" -> Pressione [Triângulo] novamente para RETORNAR ao modo sleep.")
+        print(" -> Pressione [START] ou Ctrl+C para SAIR.")
+
+        self.smooth_sleep_robot()
+        is_standing = False
+
+        DEADZONE = 0.20
+        def deadzone(val, dz=DEADZONE):
+            if abs(val) < dz:
+                return 0.0
+            sign = 1.0 if val > 0 else -1.0
+            return sign * (abs(val) - dz) / (1.0 - dz)
+
+        import threading
+        locomotion_threads = []
+        locomotion_stop = threading.Event()
+        shared_state = {"speed": 0, "direction": 1}
+        current_walking_state = 0 # 0=parado, 1=frente, -1=tras
+
+        def start_walking():
+            from auxiliar_funcs.leg_test import frente_dir, frente_esq, tras_dir, tras_esq
+            nonlocal locomotion_threads, locomotion_stop
+            locomotion_stop.clear()
+            leg_map = {
+                "frente_dir": frente_dir, "frente_esq": frente_esq,
+                "tras_dir": tras_dir, "tras_esq": tras_esq
+            }
+            sync_barrier = threading.Barrier(4)
+            locomotion_threads = []
+            for leg, func in leg_map.items():
+                delay_val = 0.8 if "tras" in leg else 0.0
+                t = threading.Thread(
+                    target=func,
+                    args=(self, locomotion_stop, False, delay_val, sync_barrier, shared_state),
+                    daemon=True
+                )
+                locomotion_threads.append(t)
+                t.start()
+
+        def stop_walking():
+            nonlocal locomotion_threads, locomotion_stop
+            locomotion_stop.set()
+            for t in locomotion_threads:
+                t.join(timeout=2.0)
+            locomotion_threads = []
+
+        import time
+        pending_walk = False
+        walk_start_time = 0
+        last_axis_y = 0.0
+        DEBOUNCE_TIME = 0.15 # 150ms segurando o analógico para confirmar
+
+        try:
+            # Lemos os eventos em loop bloqueante
+            for event in gamepad.read_loop():
+                
+                # Debounce temporal: aproveitamos qualquer evento (mesmo acelerômetros) para checar o tempo
+                if pending_walk and (time.time() - walk_start_time > DEBOUNCE_TIME):
+                    shared_state["speed"] = abs(last_axis_y)
+                    shared_state["direction"] = 1
+                    if current_walking_state != 1:
+                        print(f"Andando para FRENTE... (Força: {abs(last_axis_y):.2f})")
+                        current_walking_state = 1
+                    pending_walk = False
+
+                if event.type == ecodes.EV_KEY:
+                    code = event.code
+                    val  = event.value  # 1 = pressionado
+
+                    if val == 1:
+                        # Botão Triângulo (BTN_NORTH / BTN_Y / 300 no sixad)
+                        if code in (ecodes.BTN_NORTH, ecodes.BTN_Y, 300):
+                            if not is_standing:
+                                print("\n[Triângulo] Levantando robô (Modo Caminhada)...")
+                                shared_state["speed"] = 0
+                                start_walking()
+                                is_standing = True
+                                print("Robô levantado. Use o analógico esquerdo (Cima) para andar.")
+                            else:
+                                print("\n[Triângulo] Voltando para o modo sleep...")
+                                stop_walking()
+                                self.smooth_sleep_robot()
+                                is_standing = False
+                                print("Robô em repouso (sleep). Pressione [Triângulo] para levantar.")
+                        # Botão Start (BTN_START / 315)
+                        elif code in (ecodes.BTN_START, 315):
+                            print("\n[START Pressionado] Encerrando modo PS3...")
+                            break
+
+                # Filtro de Eixos do Analógico (ignora todos os acelerômetros e gatilhos)
+                elif event.type == ecodes.EV_ABS and is_standing:
+                    # Filtra apenas o eixo Y do analógico esquerdo
+                    if event.code == ecodes.ABS_Y:
+                        raw_y = (event.value - 128.0) / 128.0
+                        axis_y = deadzone(raw_y)
+                        
+                        # Eixo Y negativo = para cima (frente)
+                        if axis_y <= -1.03:
+                            last_axis_y = axis_y
+                            if current_walking_state != 1 and not pending_walk:
+                                # Inicia o timer de debounce
+                                pending_walk = True
+                                walk_start_time = time.time()
+                            elif current_walking_state == 1:
+                                # Se já está andando, apenas atualiza a força contínua
+                                shared_state["speed"] = abs(axis_y)
+                        else:
+                            # Se a força for menor que 1.03, ou se foi só um ruído fantasma que voltou a zero, PARA.
+                            pending_walk = False
+                            shared_state["speed"] = 0
+                            if current_walking_state != 0:
+                                print("Robô PARADO.")
+                                current_walking_state = 0
+
+        except KeyboardInterrupt:
+            print("\nInterrompido pelo usuário.")
+        finally:
+            stop_walking()
+            print("Retornando robô ao modo sleep...")
+            self.smooth_sleep_robot()
+            print("Modo PS3 finalizado.")
+
+# ── Execução principal / Menu interativo ──────────────────────────────────────
 if __name__ == "__main__":
-
     dict_servos = {
         "frente_femur_dir": kit.servo[1],
         "frente_angular_dir": kit.servo[2],
@@ -515,6 +706,7 @@ if __name__ == "__main__":
         print("4 - Flexão de pernas (varredura de eixo)")
         print("5 - Estabilização lateral (roll + pitch + Filtro de Kalman)")
         print("6 - Modo de Calibração")
+        print("7 - Controle PS3 (Movimentação do Robô)")
         print("0 - Sair")
 
         op = input("Opção: ")
@@ -544,6 +736,8 @@ if __name__ == "__main__":
             robot_leg.test_stabilization()
         elif op == "6":
             robot_leg.calibration_mode()
+        elif op == "7":
+            robot_leg.ps3_control_mode()
         elif op == "0":
             print("Saindo...")
             break
