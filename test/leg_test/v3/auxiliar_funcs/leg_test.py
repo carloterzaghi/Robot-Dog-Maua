@@ -90,8 +90,8 @@ def frente_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
     # usando ease (cosseno) para evitar pico de corrente no arranque.
     print("Indo para posição inicial (rampa suave)...")
 
-    # Calcula ângulos-alvo via IK para o início do swing (X_ATRAS, Z_APOIO)
-    x_init, z_init = X_ATRAS, Z_APOIO
+    # Calcula ângulos-alvo via IK para o centro (0, Z_APOIO)
+    x_init, z_init = 0, Z_APOIO
     if z_init > MAX_Z:
         z_init = MAX_Z
     len_B = norm([x_init, 0, z_init])
@@ -241,7 +241,7 @@ def frente_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
 
     # Calcula ângulos-alvo via IK para o início do apoio (X_FRENTE, Z_APOIO)
     # A esq começa no apoio (defasada 180° em relação à dir)
-    x_init, z_init = X_FRENTE, Z_APOIO
+    x_init, z_init = 0, Z_APOIO
     if z_init > MAX_Z:
         z_init = MAX_Z
     len_B = norm([x_init, 0, z_init])
@@ -390,7 +390,7 @@ def tras_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
     # tras_dir inicia no APOIO — mesmo diagonal que frente_esq (X_FRENTE, Z_APOIO)
     print("Indo para posição inicial - tras_dir (rampa suave)...")
 
-    x_init, z_init = X_FRENTE, Z_APOIO
+    x_init, z_init = 0, Z_APOIO
     if z_init > MAX_Z:
         z_init = MAX_Z
     len_B = norm([x_init, 0, z_init])
@@ -534,7 +534,7 @@ def tras_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
     # tras_esq inicia no SWING — mesmo diagonal que frente_dir (X_ATRAS, Z_APOIO)
     print("Indo para posição inicial - tras_esq (rampa suave)...")
 
-    x_init, z_init = X_ATRAS, Z_APOIO
+    x_init, z_init = 0, Z_APOIO
     if z_init > MAX_Z:
         z_init = MAX_Z
     len_B = norm([x_init, 0, z_init])
