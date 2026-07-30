@@ -6,6 +6,14 @@ Set Inicial = 100°
 Min 90° - Max 135°
 Set Inicial = 105°
 
+10 - Servo Angulares:
+Min 70° - Max 120°
+Set Inicial = 100°
+
+14 - Servo Angulares:
+Min 90° - Max 135°
+Set Inicial = 105°
+
 Servos Femur e Tibia:
 Set Inicial = 90°
 
@@ -23,3 +31,18 @@ Pata Frontal Esquerda:
 5 - Femur
 6 - Angular
 7 - Tibia
+
+Pata Traseira Direita:
+9 - Femur
+10 - Angular
+11 - Tibia
+
+Pata Traseira Esquerda:
+13 - Femur
+14 - Angular
+15 - Tibia
+
+Canais do PCA9685 com respectivos servos:
+Femur = Servo Superior do encaixe da perna
+Angular = Servo da Rotação da perna em volto do eixo X
+Tibia = Servo Inferior do encaixe da perna
