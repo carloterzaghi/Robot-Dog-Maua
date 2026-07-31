@@ -215,54 +215,96 @@ class RobotLeg:
         Move o robô para a posição inicial de flexão de forma gradual,
         usando uma curva ease-in-out (smootherstep) para evitar picos de corrente.
         Posição calculada via IK para x=X_FIXO=-9 mm, z=MAX_Z=-20 mm.
+
+        Sequência de movimentos:
+          1. Tíbias e fêmures da frente → espera 0.2 s → tíbias e fêmures de trás.
+          2. Angulares da frente       → espera 0.2 s → angulares de trás.
         """
-        targets_frente = {
-            "frente_femur_dir":    43,
+        # ── Alvos de tíbia/fêmur ─────────────────────────────────────────────────
+        struct_frente = {
+            "frente_femur_dir":   30,
+            "frente_tibia_dir":   60,
+            "frente_femur_esq":  150,
+            "frente_tibia_esq":  120,
+        }
+
+        struct_tras = {
+            "tras_femur_dir":   30,
+            "tras_tibia_dir":   40,
+            "tras_femur_esq":  150,
+            "tras_tibia_esq":  135,
+        }
+
+        # ── Alvos dos angulares ───────────────────────────────────────────────────
+        ang_frente = {
             "frente_angular_dir": 100,
-            "frente_tibia_dir":    71,
-            "frente_femur_esq":   137,
             "frente_angular_esq": 105,
-            "frente_tibia_esq":   109,
         }
-        
-        targets_tras = {
-            "tras_femur_dir":      43,
-            "tras_angular_dir":   100,
-            "tras_tibia_dir":      71,
-            "tras_femur_esq":     137,
-            "tras_angular_esq":   105,
-            "tras_tibia_esq":     109,
+
+        ang_tras = {
+            "tras_angular_dir": 100,
+            "tras_angular_esq": 105,
         }
-        
-        # 1. Abaixa as pernas da frente
-        self._smooth_move(targets_frente, n_steps, delay)
-        
-        # 2. Espera 0.8 segundos
-        time.sleep(0.8)
-        
-        # 3. Abaixa as pernas de trás
-        self._smooth_move(targets_tras, n_steps, delay)
+
+        # 1. Tíbias e fêmures da frente e tras
+        self._smooth_move(struct_frente, n_steps, delay)
+        self._smooth_move(struct_tras, n_steps, delay)
+
+        # 2. Angulares da frente e tras
+        self._smooth_move(ang_frente, n_steps, delay)
+        self._smooth_move(ang_tras, n_steps, delay)
 
     def smooth_sleep_robot(self, n_steps=60, delay=0.02):
         """
         Move o robô para a posição de descanso de forma gradual,
         usando uma curva ease-in-out (smootherstep) para evitar picos de corrente.
         """
-        targets = {
-            "frente_femur_dir": 80,
+        
+
+        struct_start_flexao = {
+                "frente_femur_dir":   30,
+                "frente_tibia_dir":   60,
+                "frente_femur_esq":  150,
+                "frente_tibia_esq":  120,
+                "tras_femur_dir":   30,
+                "tras_tibia_dir":   40,
+                "tras_femur_esq":  150,
+                "tras_tibia_esq":  135,
+            }
+
+        self._smooth_move(struct_start_flexao, 60, 0.02)
+
+        # ── Alvos dos angulares para modo sleep ──────────────────────────────────
+        ang_frente = {
             "frente_angular_dir": 70,
+            "frente_angular_esq": 135,
+        }
+        ang_tras = {
+            "tras_angular_dir": 135,
+            "tras_angular_esq": 70,
+        }
+
+        # ── Alvos de tíbia/fêmur para modo sleep ─────────────────────────────────
+        struct_frente = {
+            "frente_femur_dir": 80,
             "frente_tibia_dir": 120,
             "frente_femur_esq": 100,
-            "frente_angular_esq": 135,
             "frente_tibia_esq": 70,
-            "tras_femur_esq": 100,
-            "tras_angular_esq": 70,
-            "tras_tibia_esq": 80,
-            "tras_femur_dir": 80,
-            "tras_angular_dir": 135,
-            "tras_tibia_dir": 85
         }
-        self._smooth_move(targets, n_steps, delay)
+        struct_tras = {
+            "tras_femur_dir": 55,
+            "tras_tibia_dir": 60,
+            "tras_femur_esq": 120,
+            "tras_tibia_esq": 100
+        }
+
+        # 2. Angulares da frente e trás
+        self._smooth_move(ang_frente, n_steps, delay)
+        self._smooth_move(ang_tras, n_steps, delay)
+
+        # 3. Tíbias e fêmures da frente e trás
+        self._smooth_move(struct_frente, n_steps, delay)
+        self._smooth_move(struct_tras, n_steps, delay)
 
     def test_leg_movement(self, dict_legs={"frente_dir": 0, "frente_esq": 0, "tras_dir": 0, "tras_esq": 0}, use_angular=True):
         """
@@ -315,7 +357,7 @@ class RobotLeg:
         Testa a flexão da perna varrendo o eixo Z com X fixo em -9 mm.
         Quando há pernas de frente E de trás selecionadas:
           1. Pernas da frente iniciam a descida imediatamente.
-          2. Pernas de trás aguardam 0.8 segundos em cada ciclo antes de descer.
+          2. Pernas de trás aguardam 0.2 segundos em cada ciclo antes de descer.
           3. Pernas da frente esperam no fundo (barrier) até as de trás chegarem.
           4. Todas sobem juntas do fundo ao topo.
           5. Repete o ciclo continuamente com o mesmo escalonamento.
@@ -330,7 +372,7 @@ class RobotLeg:
 
         # Barrier com N = total de pernas ativas (todas esperam no fundo)
         sync_barrier = threading.Barrier(n_total) if n_total > 1 else None
-        rear_delay = 0.8 if (n_front > 0 and n_rear > 0) else 0.0
+        rear_delay = 0.2 if (n_front > 0 and n_rear > 0) else 0.0
 
 
         front_threads = [
@@ -368,7 +410,8 @@ class RobotLeg:
                 except Exception:
                     pass
             for t in all_threads:
-                t.join()
+                t.join() 
+
             self.smooth_sleep_robot()
 
 
@@ -547,9 +590,9 @@ class RobotLeg:
 
         print("\n=== Modo Controle PS3 ===")
         print(" -> Robô em modo SLEEP.")
-        print(" -> Pressione [Triângulo] para LEVANTAR o robô e iniciar locomoção.")
+        print(" -> Pressione [Botão TOP] para LEVANTAR o robô e iniciar locomoção.")
         print(" -> Quando levantado, use o Analógico Esquerdo (Cima) para andar para frente.")
-        print(" -> Pressione [Triângulo] novamente para RETORNAR ao modo sleep.")
+        print(" -> Pressione [Botão TOP] novamente para RETORNAR ao modo sleep.")
         print(" -> Pressione [START] ou Ctrl+C para SAIR.")
 
         self.smooth_sleep_robot()
@@ -601,13 +644,39 @@ class RobotLeg:
         last_axis_y = 0.0
         DEBOUNCE_TIME = 0.40 # 400ms segurando o analógico para confirmar
         
-        triangle_pressed = False
-        triangle_press_time = 0.0
+        top_pressed = False
+        top_press_time = 0.0
+
+        # ── Whitelist de códigos aceitos ─────────────────────────────────────────────
+        # Apenas os botões e eixos que realmente usamos. Tudo fora é descartado.
+        ALLOWED_BUTTONS = set()
+        # Botão TOP
+        ALLOWED_BUTTONS.update([ecodes.BTN_TOP])
+        # Start
+        ALLOWED_BUTTONS.update([ecodes.BTN_START, 315])
+
+        # Apenas o eixo Y do analógico esquerdo
+        ALLOWED_AXES = {ecodes.ABS_Y}
+
+        # Proteção contra duplo-clique do Botão TOP durante transição
+        TOGGLE_COOLDOWN = 1.5  # segundos mínimos entre toggles
+        last_toggle_time = 0.0
+        transitioning = False  # True enquanto a thread de toggle está rodando
+
+        try:
+            # Grab exclusivo: impede que outros processos leiam o controle
+            gamepad.grab()
+        except Exception:
+            print("Aviso: não foi possível obter grab exclusivo do controle.")
 
         try:
             # Lemos os eventos em loop bloqueante
             for event in gamepad.read_loop():
-                
+
+                # ── Ignora eventos de sincronização (EV_SYN) ──────────────────────
+                if event.type == ecodes.EV_SYN:
+                    continue
+
                 # Debounce temporal: aproveitamos qualquer evento para checar o tempo
                 if pending_walk and (time.time() - walk_start_time > DEBOUNCE_TIME):
                     shared_state["speed"] = abs(last_axis_y)
@@ -617,37 +686,89 @@ class RobotLeg:
                         current_walking_state = 1
                     pending_walk = False
                     
-                # Checa se o Triângulo está pressionado por 4 segundos
-                if triangle_pressed and (time.time() - triangle_press_time >= 4.0):
-                    triangle_pressed = False # Reseta para não ativar repetidas vezes
+                # Checa se o Botão TOP está pressionado por 2 segundos
+                if top_pressed and (time.time() - top_press_time >= 2.0):
+                    top_pressed = False # Reseta para não ativar repetidas vezes
                     if not is_standing:
-                        print("\n[Triângulo 4s] Levantando robô (Modo Caminhada)...")
+                        print("\n[Botão TOP 2s] Levantando robô (Modo Caminhada)...")
                         shared_state["speed"] = 0
                         start_walking()
                         is_standing = True
                         print("Robô levantado. Use o analógico esquerdo (Cima) para andar.")
                     else:
-                        print("\n[Triângulo 4s] Voltando para o modo sleep...")
+                        print("\n[Botão TOP 2s] Voltando para o modo sleep...")
                         stop_walking()
                         self.smooth_sleep_robot()
                         is_standing = False
-                        print("Robô em repouso (sleep). Pressione [Triângulo] por 4s para levantar.")
+                        print("Robô em repouso (sleep). Pressione [Botão TOP] por 2s para levantar.")
 
+                # ── Filtragem de botões (EV_KEY) ──────────────────────────────────
                 if event.type == ecodes.EV_KEY:
                     code = event.code
                     val  = event.value  # 1 = pressionado, 0 = solto
+
+                    # Descarta qualquer botão que não está na whitelist
+                    if code not in ALLOWED_BUTTONS:
+                        continue
+
+                    # Ignora evento de "repeat" (val == 2)
+                    if val not in (0, 1):
+                        continue
                     
-                    # Lógica do Botão Triângulo (BTN_NORTH / BTN_Y / 300)
-                    if code in (ecodes.BTN_NORTH, ecodes.BTN_Y, 300):
+                    # Lógica do Botão TOP
+                    if code == ecodes.BTN_TOP:
                         if val == 1:
-                            if not triangle_pressed:
-                                triangle_pressed = True
-                                triangle_press_time = time.time()
-                                print("Segurando Triângulo... Aguarde 4 segundos.")
+                            if not top_pressed:
+                                top_pressed = True
+                                top_press_time = time.time()
+                                print("Segurando Botão TOP... Aguarde 2 segundos.")
                         elif val == 0:
-                            if triangle_pressed:
-                                print("Triângulo solto antes de 4 segundos. Ação cancelada.")
-                            triangle_pressed = False
+                            elapsed = time.time() - top_press_time
+                            if top_pressed and elapsed < 2.0:
+                                # Cooldown: ignora se estamos em transição ou dentro do período
+                                if transitioning or (time.time() - last_toggle_time < TOGGLE_COOLDOWN):
+                                    print("Aguarde a transição anterior finalizar.")
+                                    top_pressed = False
+                                    continue
+
+                                # Clique simples: alterna entre levantar e deitar
+                                stop_walking()
+                                shared_state["speed"] = 0
+                                last_toggle_time = time.time()
+                                
+                                def _run_toggle():
+                                    nonlocal is_standing, transitioning
+                                    transitioning = True
+                                    try:
+                                        if not is_standing:
+                                            print("\\n[Botão TOP] Indo para posição inicial e levantando (smooth_flexion_start)...")
+                                            self.smooth_flexion_start()
+                                            print("Robô levantando para modo de caminhada...")
+                                            start_walking()
+                                            is_standing = True
+                                            print("Robô levantado e pronto para andar.")
+                                        else:
+                                            print("\\n[Botão TOP] Retornando para posição de descanso...")
+                                            struct_start_flexao = {
+                                                "frente_femur_dir":   30,
+                                                "frente_tibia_dir":   60,
+                                                "frente_femur_esq":  150,
+                                                "frente_tibia_esq":  120,
+                                                "tras_femur_dir":   30,
+                                                "tras_tibia_dir":   40,
+                                                "tras_femur_esq":  150,
+                                                "tras_tibia_esq":  135,
+                                            }
+                                            self._smooth_move(struct_start_flexao, 60, 0.02)
+                                            self.smooth_sleep_robot()
+                                            is_standing = False
+                                            print("Robô em repouso (sleep).")
+                                    finally:
+                                        transitioning = False
+                                
+                                t = threading.Thread(target=_run_toggle, daemon=True)
+                                t.start()
+                            top_pressed = False
 
                     if val == 1:
                         # Botão Start (BTN_START / 315)
@@ -655,8 +776,16 @@ class RobotLeg:
                             print("\n[START Pressionado] Encerrando modo PS3...")
                             break
 
-                # Filtro de Eixos do Analógico (ignora todos os acelerômetros e gatilhos)
-                elif event.type == ecodes.EV_ABS and is_standing:
+                # ── Filtragem de eixos analógicos (EV_ABS) ────────────────────────
+                elif event.type == ecodes.EV_ABS:
+                    # Ignora eixos durante transição ou se não está de pé
+                    if not is_standing or transitioning:
+                        continue
+
+                    # Descarta qualquer eixo fora da whitelist (acelerômetros, gatilhos, etc.)
+                    if event.code not in ALLOWED_AXES:
+                        continue
+
                     # Filtra apenas o eixo Y do analógico esquerdo
                     if event.code == ecodes.ABS_Y:
                         
@@ -690,6 +819,10 @@ class RobotLeg:
             print("\nInterrompido pelo usuário.")
         finally:
             stop_walking()
+            try:
+                gamepad.ungrab()
+            except Exception:
+                pass
             print("Retornando robô ao modo sleep...")
             self.smooth_sleep_robot()
             print("Modo PS3 finalizado.")
