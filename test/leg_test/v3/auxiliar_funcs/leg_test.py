@@ -40,10 +40,10 @@ def frente_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
     MAX_Z      = -80
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
-    Z_APOIO  = -150
-    Z_SWING  =  -85
-    X_FRENTE =   60
-    X_ATRAS  =  -60
+    Z_APOIO  = -219.8
+    Z_SWING  = -154.8
+    X_FRENTE =   90
+    X_ATRAS  =  -90
     N_PONTOS =   20
     DELAY    = 0.015
 
@@ -188,10 +188,10 @@ def frente_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
     MAX_Z      = -80
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
-    Z_APOIO  = -150
-    Z_SWING  =  -85
-    X_FRENTE =   60
-    X_ATRAS  =  -60
+    Z_APOIO  = -219.8
+    Z_SWING  = -154.8
+    X_FRENTE =   90
+    X_ATRAS  =  -90
     N_PONTOS =   20
     DELAY    = 0.015
 
@@ -339,10 +339,10 @@ def tras_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
     MAX_Z      = -80
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
-    Z_APOIO  = -150
-    Z_SWING  =  -85
-    X_FRENTE =   60
-    X_ATRAS  =  -60
+    Z_APOIO  = -219.8
+    Z_SWING  = -154.8
+    X_FRENTE =   90
+    X_ATRAS  =  -90
     N_PONTOS =   20
     DELAY    = 0.015
 
@@ -484,10 +484,10 @@ def tras_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
     MAX_Z      = -80
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
-    Z_APOIO  = -150
-    Z_SWING  =  -85
-    X_FRENTE =   60
-    X_ATRAS  =  -60
+    Z_APOIO  = -219.8
+    Z_SWING  = -154.8
+    X_FRENTE =   90
+    X_ATRAS  =  -90
     N_PONTOS =   20
     DELAY    = 0.015
 
@@ -618,4 +618,4 @@ def tras_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
             move_leg(x, Z_APOIO)
             if use_angular:
                 self.tras_angular_esq.angle = ang_apoio[i]
-            time.sleep(DELAY)
+            time.sleep(DELAY)
