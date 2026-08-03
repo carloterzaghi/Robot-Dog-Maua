@@ -294,7 +294,7 @@ class RobotLeg:
         self._smooth_move(struct_sleep_flexao, n_steps, delay)
 
 
-    def test_leg_movement(self, dict_legs={"frente_dir": 0, "frente_esq": 0, "tras_dir": 0, "tras_esq": 0}, use_angular=True):
+    def test_leg_movement(self, dict_legs={"frente_dir": 0, "frente_esq": 0, "tras_dir": 0, "tras_esq": 0}, use_angular=True, direction=1):
         """
         Testa o movimento da perna do robô, movendo os servos para diferentes ângulos.
         Pernas com valor 1 são movidas simultaneamente em threads separadas.
@@ -322,7 +322,7 @@ class RobotLeg:
             delay_val = 0.8 if "tras" in leg else 0.0
             t = threading.Thread(
                 target=func, 
-                args=(self, stop_event, use_angular, delay_val, sync_barrier), 
+                args=(self, stop_event, use_angular, delay_val, sync_barrier, {"speed": 1, "direction": direction}), 
                 daemon=True
             )
             threads.append(t)
@@ -601,6 +601,7 @@ class RobotLeg:
 
         def start_walking():
             from auxiliar_funcs.leg_test import frente_dir, frente_esq, tras_dir, tras_esq
+            from auxiliar_funcs.stabilization import stabilize_angular
             nonlocal locomotion_threads, locomotion_stop
             locomotion_stop.clear()
             leg_map = {
@@ -618,6 +619,13 @@ class RobotLeg:
                 )
                 locomotion_threads.append(t)
                 t.start()
+            stab_t = threading.Thread(
+                target=stabilize_angular,
+                args=(locomotion_stop, self),
+                daemon=True
+            )
+            locomotion_threads.append(stab_t)
+            stab_t.start()
 
         def stop_walking():
             nonlocal locomotion_threads, locomotion_stop
@@ -628,6 +636,7 @@ class RobotLeg:
 
         import time
         pending_walk = False
+        pending_walk_direction = 1  # 1=frente, -1=trás
         walk_start_time = 0
         last_axis_y = 0.0
         DEBOUNCE_TIME = 0.40 # 400ms segurando o analógico para confirmar
@@ -668,10 +677,11 @@ class RobotLeg:
                 # Debounce temporal: aproveitamos qualquer evento para checar o tempo
                 if pending_walk and (time.time() - walk_start_time > DEBOUNCE_TIME):
                     shared_state["speed"] = abs(last_axis_y)
-                    shared_state["direction"] = 1
-                    if current_walking_state != 1:
-                        print(f"Andando para FRENTE... (Força: {abs(last_axis_y):.2f})")
-                        current_walking_state = 1
+                    shared_state["direction"] = pending_walk_direction
+                    if current_walking_state != pending_walk_direction:
+                        direction_str = "FRENTE" if pending_walk_direction == 1 else "TRÁS"
+                        print(f"Andando para {direction_str}... (Força: {abs(last_axis_y):.2f})")
+                        current_walking_state = pending_walk_direction
                     pending_walk = False
                     
                 # Checa se o Botão TOP está pressionado por 2 segundos
@@ -777,26 +787,33 @@ class RobotLeg:
                     # Filtra apenas o eixo Y do analógico esquerdo
                     if event.code == ecodes.ABS_Y:
                         
-                        # Filtro de hardware: Se o valor for muito bizarro (fora de 0-255), 
-                        # é o acelerômetro 16-bit do controle mandando lixo no mesmo eixo.
-                        if event.value < -50 or event.value > 305:
-                            continue
-                            
-                        raw_y = (event.value - 128.0) / 128.0
+                        # O driver sixad reporta o eixo já centralizado no 0
+                        raw_y = event.value / 128.0
                         axis_y = deadzone(raw_y)
                         
-                        # Eixo Y negativo = para cima (frente)
-                        if axis_y <= -1.03:
+                        # Eixo Y negativo = para cima (frente) / positivo = para trás
+                        if axis_y <= -0.7:
                             last_axis_y = axis_y
                             if current_walking_state != 1 and not pending_walk:
-                                # Inicia o timer de debounce
+                                # Inicia o timer de debounce para marcha frente
                                 pending_walk = True
+                                pending_walk_direction = 1
                                 walk_start_time = time.time()
                             elif current_walking_state == 1:
-                                # Se já está andando, apenas atualiza a força contínua
+                                # Se já está andando para frente, atualiza a força contínua
+                                shared_state["speed"] = abs(axis_y)
+                        elif axis_y >= 0.7:
+                            last_axis_y = axis_y
+                            if current_walking_state != -1 and not pending_walk:
+                                # Inicia o timer de debounce para marcha ré
+                                pending_walk = True
+                                pending_walk_direction = -1
+                                walk_start_time = time.time()
+                            elif current_walking_state == -1:
+                                # Se já está andando para trás, atualiza a força contínua
                                 shared_state["speed"] = abs(axis_y)
                         else:
-                            # Se a força for menor que 1.03, ou se foi só um ruído fantasma, PARA.
+                            # Analógico na zona neutra — PARA
                             pending_walk = False
                             shared_state["speed"] = 0
                             if current_walking_state != 0:
@@ -814,6 +831,116 @@ class RobotLeg:
             print("Retornando robô ao modo sleep...")
             self.smooth_sleep_robot()
             print("Modo PS3 finalizado.")
+
+    def terminal_control_mode(self):
+        print("\n=== Modo Controle Terminal ===")
+        print(" -> Robô em modo SLEEP.")
+        print(" -> Comandos:")
+        print("    [L] Levantar (stand)")
+        print("    [F] Andar para Frente")
+        print("    [T] Andar para Trás")
+        print("    [P] Parar de andar")
+        print("    [D] Deitar (sleep)")
+        print("    [S] Sair")
+        print(" -> Pressione Enter após digitar o comando.")
+
+        self.smooth_sleep_robot()
+        is_standing = False
+
+        import threading
+        locomotion_threads = []
+        locomotion_stop = threading.Event()
+        shared_state = {"speed": 0, "direction": 1}
+
+        def start_walking():
+            from auxiliar_funcs.leg_test import frente_dir, frente_esq, tras_dir, tras_esq
+            from auxiliar_funcs.stabilization import stabilize_angular
+            nonlocal locomotion_threads, locomotion_stop
+            locomotion_stop.clear()
+            leg_map = {
+                "frente_dir": frente_dir, "frente_esq": frente_esq,
+                "tras_dir": tras_dir, "tras_esq": tras_esq
+            }
+            sync_barrier = threading.Barrier(4)
+            locomotion_threads = []
+            for leg, func in leg_map.items():
+                delay_val = 0.8 if "tras" in leg else 0.0
+                t = threading.Thread(
+                    target=func,
+                    args=(self, locomotion_stop, False, delay_val, sync_barrier, shared_state),
+                    daemon=True
+                )
+                locomotion_threads.append(t)
+                t.start()
+            stab_t = threading.Thread(
+                target=stabilize_angular,
+                args=(locomotion_stop, self),
+                daemon=True
+            )
+            locomotion_threads.append(stab_t)
+            stab_t.start()
+
+        def stop_walking():
+            nonlocal locomotion_threads, locomotion_stop
+            locomotion_stop.set()
+            for t in locomotion_threads:
+                t.join(timeout=2.0)
+            locomotion_threads = []
+
+        try:
+            while True:
+                cmd = input("Comando: ").strip().lower()
+                if cmd == 's':
+                    print("Saindo do modo terminal...")
+                    if is_standing:
+                        stop_walking()
+                    break
+                elif cmd == 'l':
+                    if not is_standing:
+                        print("Levantando robô...")
+                        shared_state["speed"] = 0
+                        start_walking()
+                        is_standing = True
+                    else:
+                        print("Robô já está em pé.")
+                elif cmd == 'd':
+                    if is_standing:
+                        print("Deitando robô...")
+                        stop_walking()
+                        self.smooth_sleep_robot()
+                        is_standing = False
+                    else:
+                        print("Robô já está deitado.")
+                elif cmd == 'f':
+                    if is_standing:
+                        print("Andando para FRENTE (Força: 1.00)")
+                        shared_state["speed"] = 1.0
+                        shared_state["direction"] = 1
+                    else:
+                        print("Levante o robô primeiro (Comando 'L').")
+                elif cmd == 't':
+                    if is_standing:
+                        print("Andando para TRÁS (Força: 1.00)")
+                        shared_state["speed"] = 1.0
+                        shared_state["direction"] = -1
+                    else:
+                        print("Levante o robô primeiro (Comando 'L').")
+                elif cmd == 'p':
+                    if is_standing:
+                        print("Parando locomoção (Força: 0.00)")
+                        shared_state["speed"] = 0.0
+                    else:
+                        print("Robô já está deitado.")
+                else:
+                    print("Comando inválido. Use: L, F, T, P, D, S.")
+        except KeyboardInterrupt:
+            print("\nInterrompido pelo usuário.")
+        finally:
+            if is_standing:
+                stop_walking()
+            print("Retornando robô ao modo sleep...")
+            self.smooth_sleep_robot()
+            print("Modo Terminal finalizado.")
 
 # ── Execução principal / Menu interativo ──────────────────────────────────────
 if __name__ == "__main__":
@@ -851,6 +978,7 @@ if __name__ == "__main__":
         print("5 - Estabilização lateral (roll + pitch + Filtro de Kalman)")
         print("6 - Modo de Calibração")
         print("7 - Controle PS3 (Movimentação do Robô)")
+        print("8 - Controle via Terminal (Movimentação do Robô - NÃO USAR)")
         print("0 - Sair")
 
         op = input("Opção: ")
@@ -860,9 +988,9 @@ if __name__ == "__main__":
             leg_keys = ["frente_dir", "frente_esq", "tras_dir", "tras_esq"]
             values = [v.strip() for v in leg_input.split(",")]
             legs_to_test = {leg_keys[i]: int(v) for i, v in enumerate(values) if i < len(leg_keys)}
-            ang_input = input("Testar movimento angular? (s/n): ")
-            use_angular = ang_input.strip().lower() != "n"
-            robot_leg.test_leg_movement(legs_to_test, use_angular=use_angular)
+            dir_input = input("Direção do teste (f = Frente, t = Trás): ")
+            direction = -1 if dir_input.strip().lower() == "t" else 1
+            robot_leg.test_leg_movement(legs_to_test, direction=direction)
         elif op == "2":
             robot_leg.smooth_default_position()
         elif op == "3":
@@ -882,6 +1010,8 @@ if __name__ == "__main__":
             robot_leg.calibration_mode()
         elif op == "7":
             robot_leg.ps3_control_mode()
+        elif op == "8":
+            robot_leg.terminal_control_mode()
         elif op == "0":
             print("Saindo...")
             break
