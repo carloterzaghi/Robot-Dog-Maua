@@ -27,10 +27,10 @@ class RobotLeg:
     }
 
     # Caminho do arquivo de calibração (mesmo diretório do script)
-    _CALIB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
+    _CALIB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs", "calibration.json")
 
     # Caminho do arquivo de estado dos servos (ultimo ângulo comandado)
-    _STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "servo_state.json")
+    _STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs", "servo_state.json")
 
     def __init__(self, dict_servos = {}):
         """
@@ -221,14 +221,11 @@ class RobotLeg:
           2. Angulares da frente       → espera 0.2 s → angulares de trás.
         """
         # ── Alvos de tíbia/fêmur ─────────────────────────────────────────────────
-        struct_frente = {
+        struct_start = {
             "frente_femur_dir":   30,
             "frente_tibia_dir":   60,
             "frente_femur_esq":  150,
             "frente_tibia_esq":  120,
-        }
-
-        struct_tras = {
             "tras_femur_dir":   30,
             "tras_tibia_dir":   40,
             "tras_femur_esq":  150,
@@ -236,23 +233,18 @@ class RobotLeg:
         }
 
         # ── Alvos dos angulares ───────────────────────────────────────────────────
-        ang_frente = {
+        ang_start = {
             "frente_angular_dir": 100,
             "frente_angular_esq": 105,
-        }
-
-        ang_tras = {
             "tras_angular_dir": 100,
             "tras_angular_esq": 105,
         }
 
         # 1. Tíbias e fêmures da frente e tras
-        self._smooth_move(struct_frente, n_steps, delay)
-        self._smooth_move(struct_tras, n_steps, delay)
+        self._smooth_move(struct_start, n_steps, delay)
 
         # 2. Angulares da frente e tras
-        self._smooth_move(ang_frente, n_steps, delay)
-        self._smooth_move(ang_tras, n_steps, delay)
+        self._smooth_move(ang_start, n_steps, delay)
 
     def smooth_sleep_robot(self, n_steps=60, delay=0.02):
         """
@@ -275,23 +267,20 @@ class RobotLeg:
         self._smooth_move(struct_start_flexao, 60, 0.02)
 
         # ── Alvos dos angulares para modo sleep ──────────────────────────────────
-        ang_frente = {
+        ang_start_flexao = {
             "frente_angular_dir": 70,
             "frente_angular_esq": 135,
-        }
-        ang_tras = {
             "tras_angular_dir": 135,
             "tras_angular_esq": 70,
         }
 
+
         # ── Alvos de tíbia/fêmur para modo sleep ─────────────────────────────────
-        struct_frente = {
+        struct_sleep_flexao = {
             "frente_femur_dir": 80,
             "frente_tibia_dir": 120,
             "frente_femur_esq": 100,
             "frente_tibia_esq": 70,
-        }
-        struct_tras = {
             "tras_femur_dir": 55,
             "tras_tibia_dir": 60,
             "tras_femur_esq": 120,
@@ -299,12 +288,11 @@ class RobotLeg:
         }
 
         # 2. Angulares da frente e trás
-        self._smooth_move(ang_frente, n_steps, delay)
-        self._smooth_move(ang_tras, n_steps, delay)
+        self._smooth_move(ang_start_flexao, n_steps, delay)
 
         # 3. Tíbias e fêmures da frente e trás
-        self._smooth_move(struct_frente, n_steps, delay)
-        self._smooth_move(struct_tras, n_steps, delay)
+        self._smooth_move(struct_sleep_flexao, n_steps, delay)
+
 
     def test_leg_movement(self, dict_legs={"frente_dir": 0, "frente_esq": 0, "tras_dir": 0, "tras_esq": 0}, use_angular=True):
         """
