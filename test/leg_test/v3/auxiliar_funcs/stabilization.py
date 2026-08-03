@@ -293,3 +293,50 @@ def stabilize(robot_leg, stop_event):
             time.sleep(LOOP_DELAY)
 
     print()  # nova linha ao sair
+
+
+def stabilize_angular(stop_event, robot_leg):
+    """
+    Corrige roll em tempo real ajustando apenas os servos angulares (hip abduction).
+    Projetado para rodar em paralelo com as threads de locomoção (use_angular=False),
+    que não tocam nos angulares — evitando qualquer conflito de acesso.
+    """
+    kalman = _KalmanFilter()
+    try:
+        with SMBus(1) as bus:
+            bus.write_byte_data(MPU6050_ADDR, PWR_MGMT_1, 0)
+            time.sleep(0.1)
+
+            # Seed do filtro com leitura inicial do acelerômetro
+            ax = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
+            az = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
+            kalman.angle = math.degrees(math.atan2(-ax, az))
+
+            timer = time.time()
+            print("[stabilize_angular] Ativo — corrigindo roll durante locomoção.")
+
+            while not stop_event.is_set():
+                ax = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
+                az = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
+                gy = _read_word(bus, MPU6050_ADDR, GYRO_XOUT_H + 2)  / 131.0
+
+                now   = time.time()
+                dt    = now - timer
+                timer = now
+
+                roll_acc  = math.degrees(math.atan2(-ax, az))
+                roll      = kalman.get_angle(roll_acc, gy, dt)
+                roll_norm = _clamp(roll / ROLL_MAX_DEG, -1.0, 1.0)
+
+                robot_leg.frente_angular_dir.angle = _clamp(
+                    ANG_DIR_CENTER + roll_norm * ANG_DIR_RANGE, ANG_DIR_MIN, ANG_DIR_MAX)
+                robot_leg.frente_angular_esq.angle = _clamp(
+                    ANG_ESQ_CENTER + roll_norm * ANG_ESQ_RANGE, ANG_ESQ_MIN, ANG_ESQ_MAX)
+                robot_leg.tras_angular_dir.angle   = _clamp(
+                    ANG_ESQ_CENTER - roll_norm * ANG_ESQ_RANGE, ANG_ESQ_MIN, ANG_ESQ_MAX)
+                robot_leg.tras_angular_esq.angle   = _clamp(
+                    ANG_DIR_CENTER - roll_norm * ANG_DIR_RANGE, ANG_DIR_MIN, ANG_DIR_MAX)
+
+                time.sleep(LOOP_DELAY)
+    except Exception as e:
+        print(f"[stabilize_angular] Erro: {e}")
