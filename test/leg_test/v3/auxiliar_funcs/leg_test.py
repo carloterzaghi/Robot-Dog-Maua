@@ -31,6 +31,12 @@ def _cubic_bezier(P0, P1, P2, P3, n):
 N_RAMP    = 40      # quantidade de passos da rampa
 RAMP_DELAY = 0.025  # intervalo entre passos da rampa (s)
 
+# ── Alturas de apoio — ajuste para nivelar o robô ────────────────────────────
+# Se a frente parece mais esticada que o trás: aumente Z_APOIO_FRENTE (ex: -210)
+# Se o trás parece mais esticado que a frente: aumente Z_APOIO_TRAS  (ex: -210)
+Z_APOIO_FRENTE = -210   # mm — pernas da frente
+Z_APOIO_TRAS   = -219.8   # mm — pernas de trás
+
 
 def frente_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_barrier=None, shared_state=None):
     # ── Parâmetros da perna ───────────────────────────────────────────────────────
@@ -40,7 +46,7 @@ def frente_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
     MAX_Z      = -80
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
-    Z_APOIO  = -219.8
+    Z_APOIO  = Z_APOIO_FRENTE
     Z_SWING  = -154.8
     X_FRENTE =   90
     X_ATRAS  =  -90
@@ -142,12 +148,19 @@ def frente_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
 
     print("Iniciando locomoção. Ctrl+C para parar.\n")
     while not stop_event.is_set():
+        z_pitch = shared_state.get("z_pitch_frente", 0.0) if shared_state is not None else 0.0
+        z_apoio_atual = Z_APOIO + z_pitch
         if shared_state is not None:
-            if shared_state.get("speed", 0) == 0:
-                move_leg(0, Z_APOIO)
+            speed = shared_state.get("speed", 0)
+            yaw   = shared_state.get("yaw", 0.0)
+            if speed == 0 and yaw == 0.0:
+                move_leg(0, z_apoio_atual)
                 time.sleep(0.05)
                 continue
-            direction = shared_state.get("direction", 1)
+            if abs(yaw) > abs(speed):
+                direction = -1 if yaw > 0 else 1  # perna direita recua ao girar para a direita
+            else:
+                direction = shared_state.get("direction", 1)
         else:
             direction = 1
 
@@ -155,10 +168,10 @@ def frente_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
         # P0 = decolagem, P1 = subida vertical rápida,
         # P2 = alto antes de descer, P3 = pouso suave
         swing_x, swing_z = _cubic_bezier(
-            P0=[X_ATRAS * direction,  Z_APOIO],   # decolagem (chão, atrás)
-            P1=[X_ATRAS * direction,  Z_SWING],   # sobe rápido (vertical)
-            P2=[X_FRENTE * direction, Z_SWING],   # mantém alto até a frente
-            P3=[X_FRENTE * direction, Z_APOIO],   # pouso (chão, frente)
+            P0=[X_ATRAS * direction,  z_apoio_atual],   # decolagem (chão, atrás)
+            P1=[X_ATRAS * direction,  Z_SWING],          # sobe rápido (vertical)
+            P2=[X_FRENTE * direction, Z_SWING],          # mantém alto até a frente
+            P3=[X_FRENTE * direction, z_apoio_atual],    # pouso (chão, frente)
             n=N_PONTOS,
         )
         ang_swing = np.linspace(ANG_MIN, ANG_MAX, N_PONTOS)
@@ -175,7 +188,7 @@ def frente_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
         for i, x in enumerate(np.linspace(X_FRENTE * direction, X_ATRAS * direction, N_PONTOS)):
             if stop_event.is_set():
                 return
-            move_leg(x, Z_APOIO)
+            move_leg(x, z_apoio_atual)
             if use_angular:
                 self.frente_angular_dir.angle = ang_apoio[i]
             time.sleep(DELAY)
@@ -188,7 +201,7 @@ def frente_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
     MAX_Z      = -80
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
-    Z_APOIO  = -219.8
+    Z_APOIO  = Z_APOIO_FRENTE
     Z_SWING  = -154.8
     X_FRENTE =   90
     X_ATRAS  =  -90
@@ -293,12 +306,19 @@ def frente_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
 
     print("Iniciando locomoção (esq — defasada). Ctrl+C para parar.\n")
     while not stop_event.is_set():
+        z_pitch = shared_state.get("z_pitch_frente", 0.0) if shared_state is not None else 0.0
+        z_apoio_atual = Z_APOIO + z_pitch
         if shared_state is not None:
-            if shared_state.get("speed", 0) == 0:
-                move_leg(0, Z_APOIO)
+            speed = shared_state.get("speed", 0)
+            yaw   = shared_state.get("yaw", 0.0)
+            if speed == 0 and yaw == 0.0:
+                move_leg(0, z_apoio_atual)
                 time.sleep(0.05)
                 continue
-            direction = shared_state.get("direction", 1)
+            if abs(yaw) > abs(speed):
+                direction = 1 if yaw > 0 else -1  # perna esquerda avança ao girar para a direita
+            else:
+                direction = shared_state.get("direction", 1)
         else:
             direction = 1
 
@@ -308,7 +328,7 @@ def frente_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
         for i, x in enumerate(np.linspace(X_FRENTE * direction, X_ATRAS * direction, N_PONTOS)):
             if stop_event.is_set():
                 return
-            move_leg(x, Z_APOIO)
+            move_leg(x, z_apoio_atual)
             if use_angular:
                 self.frente_angular_esq.angle = ang_apoio[i]
             time.sleep(DELAY)
@@ -316,10 +336,10 @@ def frente_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
         # Fase 2 — Swing: curva de Bézier cúbica (atrás → frente)
         # Acontece enquanto a dir está no apoio (empurrando)
         swing_x, swing_z = _cubic_bezier(
-            P0=[X_ATRAS * direction,  Z_APOIO],   # decolagem (chão, atrás)
-            P1=[X_ATRAS * direction,  Z_SWING],   # sobe rápido (vertical)
-            P2=[X_FRENTE * direction, Z_SWING],   # mantém alto até a frente
-            P3=[X_FRENTE * direction, Z_APOIO],   # pouso (chão, frente)
+            P0=[X_ATRAS * direction,  z_apoio_atual],   # decolagem (chão, atrás)
+            P1=[X_ATRAS * direction,  Z_SWING],          # sobe rápido (vertical)
+            P2=[X_FRENTE * direction, Z_SWING],          # mantém alto até a frente
+            P3=[X_FRENTE * direction, z_apoio_atual],    # pouso (chão, frente)
             n=N_PONTOS,
         )
         ang_swing = np.linspace(ANG_MAX, ANG_MIN, N_PONTOS)
@@ -339,7 +359,7 @@ def tras_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
     MAX_Z      = -80
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
-    Z_APOIO  = -219.8
+    Z_APOIO  = Z_APOIO_TRAS
     Z_SWING  = -154.8
     X_FRENTE =   90
     X_ATRAS  =  -90
@@ -439,12 +459,19 @@ def tras_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
 
     print("Iniciando locomoção - tras_dir (apoio primeiro). Ctrl+C para parar.\n")
     while not stop_event.is_set():
+        z_pitch = shared_state.get("z_pitch_tras", 0.0) if shared_state is not None else 0.0
+        z_apoio_atual = Z_APOIO + z_pitch
         if shared_state is not None:
-            if shared_state.get("speed", 0) == 0:
-                move_leg(0, Z_APOIO)
+            speed = shared_state.get("speed", 0)
+            yaw   = shared_state.get("yaw", 0.0)
+            if speed == 0 and yaw == 0.0:
+                move_leg(0, z_apoio_atual)
                 time.sleep(0.05)
                 continue
-            direction = shared_state.get("direction", 1)
+            if abs(yaw) > abs(speed):
+                direction = -1 if yaw > 0 else 1  # perna direita recua ao girar para a direita
+            else:
+                direction = shared_state.get("direction", 1)
         else:
             direction = 1
 
@@ -453,17 +480,17 @@ def tras_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
         for i, x in enumerate(np.linspace(X_FRENTE * direction, X_ATRAS * direction, N_PONTOS)):
             if stop_event.is_set():
                 return
-            move_leg(x, Z_APOIO)
+            move_leg(x, z_apoio_atual)
             if use_angular:
                 self.tras_angular_dir.angle = ang_apoio[i]
             time.sleep(DELAY)
 
         # Fase 2 — Swing: Bézier cúbica (atrás → frente)
         swing_x, swing_z = _cubic_bezier(
-            P0=[X_ATRAS * direction,  Z_APOIO],
+            P0=[X_ATRAS * direction,  z_apoio_atual],
             P1=[X_ATRAS * direction,  Z_SWING],
             P2=[X_FRENTE * direction, Z_SWING],
-            P3=[X_FRENTE * direction, Z_APOIO],
+            P3=[X_FRENTE * direction, z_apoio_atual],
             n=N_PONTOS,
         )
         ang_swing = np.linspace(ANG_MAX, ANG_MIN, N_PONTOS)
@@ -484,7 +511,7 @@ def tras_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
     MAX_Z      = -80
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
-    Z_APOIO  = -219.8
+    Z_APOIO  = Z_APOIO_TRAS
     Z_SWING  = -154.8
     X_FRENTE =   90
     X_ATRAS  =  -90
@@ -584,21 +611,28 @@ def tras_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
 
     print("Iniciando locomoção - tras_esq (swing primeiro). Ctrl+C para parar.\n")
     while not stop_event.is_set():
+        z_pitch = shared_state.get("z_pitch_tras", 0.0) if shared_state is not None else 0.0
+        z_apoio_atual = Z_APOIO + z_pitch
         if shared_state is not None:
-            if shared_state.get("speed", 0) == 0:
-                move_leg(0, Z_APOIO)
+            speed = shared_state.get("speed", 0)
+            yaw   = shared_state.get("yaw", 0.0)
+            if speed == 0 and yaw == 0.0:
+                move_leg(0, z_apoio_atual)
                 time.sleep(0.05)
                 continue
-            direction = shared_state.get("direction", 1)
+            if abs(yaw) > abs(speed):
+                direction = 1 if yaw > 0 else -1  # perna esquerda avança ao girar para a direita
+            else:
+                direction = shared_state.get("direction", 1)
         else:
             direction = 1
 
         # Fase 1 — Swing: Bézier cúbica (atrás → frente) — sincronizado com frente_dir
         swing_x, swing_z = _cubic_bezier(
-            P0=[X_ATRAS * direction,  Z_APOIO],
+            P0=[X_ATRAS * direction,  z_apoio_atual],
             P1=[X_ATRAS * direction,  Z_SWING],
             P2=[X_FRENTE * direction, Z_SWING],
-            P3=[X_FRENTE * direction, Z_APOIO],
+            P3=[X_FRENTE * direction, z_apoio_atual],
             n=N_PONTOS,
         )
         ang_swing = np.linspace(ANG_MIN, ANG_MAX, N_PONTOS)
@@ -612,10 +646,10 @@ def tras_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
 
         # Fase 2 — Apoio: pé no chão, frente → atrás
         ang_apoio = np.linspace(ANG_MAX, ANG_MIN, N_PONTOS)
-        for i, x in enumerate(np.linspace(X_FRENTE, X_ATRAS, N_PONTOS)):
+        for i, x in enumerate(np.linspace(X_FRENTE * direction, X_ATRAS * direction, N_PONTOS)):
             if stop_event.is_set():
                 return
-            move_leg(x, Z_APOIO)
+            move_leg(x, z_apoio_atual)
             if use_angular:
                 self.tras_angular_esq.angle = ang_apoio[i]
             time.sleep(DELAY)
