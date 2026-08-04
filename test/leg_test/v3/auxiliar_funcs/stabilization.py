@@ -340,3 +340,67 @@ def stabilize_angular(stop_event, robot_leg):
                 time.sleep(LOOP_DELAY)
     except Exception as e:
         print(f"[stabilize_angular] Erro: {e}")
+
+
+def stabilize_full_walking(stop_event, robot_leg, shared_state):
+    """
+    Corrige roll e pitch em tempo real durante a locomoção.
+    Roll  → servos angulares (hip abduction) diretamente.
+    Pitch → atualiza shared_state["z_pitch_frente"/"z_pitch_tras"] para as threads de locomoção.
+    """
+    kalman_roll  = _KalmanFilter()
+    kalman_pitch = _KalmanFilter()
+    try:
+        with SMBus(1) as bus:
+            bus.write_byte_data(MPU6050_ADDR, PWR_MGMT_1, 0)
+            time.sleep(0.1)
+
+            ax = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
+            ay = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
+            az = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
+
+            kalman_roll.angle  = math.degrees(math.atan2(-ax, az))
+            kalman_pitch.angle = math.degrees(math.atan2(ay, math.sqrt(ax**2 + az**2)))
+
+            timer = time.time()
+            print("[stabilize_full_walking] Ativo — corrigindo roll + pitch durante locomoção.")
+
+            while not stop_event.is_set():
+                ax = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
+                ay = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
+                az = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
+                gx = _read_word(bus, MPU6050_ADDR, GYRO_XOUT_H)      / 131.0
+                gy = _read_word(bus, MPU6050_ADDR, GYRO_XOUT_H + 2)  / 131.0
+
+                now   = time.time()
+                dt    = now - timer
+                timer = now
+
+                # Roll → angulares
+                roll_acc  = math.degrees(math.atan2(-ax, az))
+                roll      = kalman_roll.get_angle(roll_acc, gy, dt)
+                roll_norm = _clamp(roll / ROLL_MAX_DEG, -1.0, 1.0)
+
+                robot_leg.frente_angular_dir.angle = _clamp(
+                    ANG_DIR_CENTER + roll_norm * ANG_DIR_RANGE, ANG_DIR_MIN, ANG_DIR_MAX)
+                robot_leg.frente_angular_esq.angle = _clamp(
+                    ANG_ESQ_CENTER + roll_norm * ANG_ESQ_RANGE, ANG_ESQ_MIN, ANG_ESQ_MAX)
+                robot_leg.tras_angular_dir.angle   = _clamp(
+                    ANG_ESQ_CENTER - roll_norm * ANG_ESQ_RANGE, ANG_ESQ_MIN, ANG_ESQ_MAX)
+                robot_leg.tras_angular_esq.angle   = _clamp(
+                    ANG_DIR_CENTER - roll_norm * ANG_DIR_RANGE, ANG_DIR_MIN, ANG_DIR_MAX)
+
+                # Pitch → delta de Z repassado às threads de locomoção via shared_state
+                pitch_acc  = math.degrees(math.atan2(ay, math.sqrt(ax**2 + az**2)))
+                pitch      = kalman_pitch.get_angle(pitch_acc, gx, dt)
+                pitch_norm = _clamp(pitch / PITCH_MAX_DEG, -1.0, 1.0)
+
+                shared_state["z_pitch_frente"] = _clamp( pitch_norm * Z_PITCH_RANGE, -Z_PITCH_RANGE, Z_PITCH_RANGE)
+                shared_state["z_pitch_tras"]   = _clamp(-pitch_norm * Z_PITCH_RANGE, -Z_PITCH_RANGE, Z_PITCH_RANGE)
+
+                time.sleep(LOOP_DELAY)
+    except Exception as e:
+        print(f"[stabilize_full_walking] Erro: {e}")
+    finally:
+        shared_state["z_pitch_frente"] = 0.0
+        shared_state["z_pitch_tras"]   = 0.0

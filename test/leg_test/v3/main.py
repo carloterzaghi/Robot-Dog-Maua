@@ -596,12 +596,12 @@ class RobotLeg:
         import threading
         locomotion_threads = []
         locomotion_stop = threading.Event()
-        shared_state = {"speed": 0, "direction": 1}
+        shared_state = {"speed": 0, "direction": 1, "z_pitch_frente": 0.0, "z_pitch_tras": 0.0, "yaw": 0.0}
         current_walking_state = 0 # 0=parado, 1=frente, -1=tras
 
         def start_walking():
             from auxiliar_funcs.leg_test import frente_dir, frente_esq, tras_dir, tras_esq
-            from auxiliar_funcs.stabilization import stabilize_angular
+            from auxiliar_funcs.stabilization import stabilize_full_walking
             nonlocal locomotion_threads, locomotion_stop
             locomotion_stop.clear()
             leg_map = {
@@ -620,8 +620,8 @@ class RobotLeg:
                 locomotion_threads.append(t)
                 t.start()
             stab_t = threading.Thread(
-                target=stabilize_angular,
-                args=(locomotion_stop, self),
+                target=stabilize_full_walking,
+                args=(locomotion_stop, self, shared_state),
                 daemon=True
             )
             locomotion_threads.append(stab_t)
@@ -629,6 +629,7 @@ class RobotLeg:
 
         def stop_walking():
             nonlocal locomotion_threads, locomotion_stop
+            shared_state["yaw"] = 0.0
             locomotion_stop.set()
             for t in locomotion_threads:
                 t.join(timeout=2.0)
@@ -652,8 +653,8 @@ class RobotLeg:
         # Start
         ALLOWED_BUTTONS.update([ecodes.BTN_START, 315])
 
-        # Apenas o eixo Y do analógico esquerdo
-        ALLOWED_AXES = {ecodes.ABS_Y}
+        # Eixos Y (frente/trás) e X (rotação) do analógico esquerdo
+        ALLOWED_AXES = {ecodes.ABS_Y, ecodes.ABS_X}
 
         # Proteção contra duplo-clique do Botão TOP durante transição
         TOGGLE_COOLDOWN = 1.5  # segundos mínimos entre toggles
@@ -784,7 +785,7 @@ class RobotLeg:
                     if event.code not in ALLOWED_AXES:
                         continue
 
-                    # Filtra apenas o eixo Y do analógico esquerdo
+                    # Filtra os eixos do analógico esquerdo
                     if event.code == ecodes.ABS_Y:
                         
                         # O driver sixad reporta o eixo já centralizado no 0
@@ -820,6 +821,18 @@ class RobotLeg:
                                 print("Robô PARADO.")
                                 current_walking_state = 0
 
+                    elif event.code == ecodes.ABS_X:
+                        raw_x = event.value / 128.0
+                        axis_x = deadzone(raw_x)
+                        # Eixo X positivo = direita / negativo = esquerda
+                        prev_yaw = shared_state["yaw"]
+                        shared_state["yaw"] = axis_x
+                        if abs(axis_x) > 0.1 and abs(prev_yaw) <= 0.1:
+                            side = "DIREITA" if axis_x > 0 else "ESQUERDA"
+                            print(f"Girando para {side}... (Força: {abs(axis_x):.2f})")
+                        elif abs(axis_x) <= 0.1 and abs(prev_yaw) > 0.1:
+                            print("Robô PARADO.")
+
         except KeyboardInterrupt:
             print("\nInterrompido pelo usuário.")
         finally:
@@ -850,11 +863,11 @@ class RobotLeg:
         import threading
         locomotion_threads = []
         locomotion_stop = threading.Event()
-        shared_state = {"speed": 0, "direction": 1}
+        shared_state = {"speed": 0, "direction": 1, "z_pitch_frente": 0.0, "z_pitch_tras": 0.0, "yaw": 0.0}
 
         def start_walking():
             from auxiliar_funcs.leg_test import frente_dir, frente_esq, tras_dir, tras_esq
-            from auxiliar_funcs.stabilization import stabilize_angular
+            from auxiliar_funcs.stabilization import stabilize_full_walking
             nonlocal locomotion_threads, locomotion_stop
             locomotion_stop.clear()
             leg_map = {
@@ -873,8 +886,8 @@ class RobotLeg:
                 locomotion_threads.append(t)
                 t.start()
             stab_t = threading.Thread(
-                target=stabilize_angular,
-                args=(locomotion_stop, self),
+                target=stabilize_full_walking,
+                args=(locomotion_stop, self, shared_state),
                 daemon=True
             )
             locomotion_threads.append(stab_t)
@@ -882,6 +895,7 @@ class RobotLeg:
 
         def stop_walking():
             nonlocal locomotion_threads, locomotion_stop
+            shared_state["yaw"] = 0.0
             locomotion_stop.set()
             for t in locomotion_threads:
                 t.join(timeout=2.0)
