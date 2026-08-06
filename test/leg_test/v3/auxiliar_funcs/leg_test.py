@@ -153,7 +153,7 @@ def frente_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
         if shared_state is not None:
             speed = shared_state.get("speed", 0)
             yaw   = shared_state.get("yaw", 0.0)
-            if speed == 0 and yaw == 0.0:
+            if speed == 0 and abs(yaw) < 0.05:
                 move_leg(0, z_apoio_atual)
                 time.sleep(0.05)
                 continue
@@ -311,7 +311,7 @@ def frente_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
         if shared_state is not None:
             speed = shared_state.get("speed", 0)
             yaw   = shared_state.get("yaw", 0.0)
-            if speed == 0 and yaw == 0.0:
+            if speed == 0 and abs(yaw) < 0.05:
                 move_leg(0, z_apoio_atual)
                 time.sleep(0.05)
                 continue
@@ -464,7 +464,7 @@ def tras_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
         if shared_state is not None:
             speed = shared_state.get("speed", 0)
             yaw   = shared_state.get("yaw", 0.0)
-            if speed == 0 and yaw == 0.0:
+            if speed == 0 and abs(yaw) < 0.05:
                 move_leg(0, z_apoio_atual)
                 time.sleep(0.05)
                 continue
@@ -616,7 +616,7 @@ def tras_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
         if shared_state is not None:
             speed = shared_state.get("speed", 0)
             yaw   = shared_state.get("yaw", 0.0)
-            if speed == 0 and yaw == 0.0:
+            if speed == 0 and abs(yaw) < 0.05:
                 move_leg(0, z_apoio_atual)
                 time.sleep(0.05)
                 continue
