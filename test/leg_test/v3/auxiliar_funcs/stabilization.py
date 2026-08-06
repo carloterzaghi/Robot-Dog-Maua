@@ -347,6 +347,9 @@ def stabilize_full_walking(stop_event, robot_leg, shared_state):
     Corrige roll e pitch em tempo real durante a locomoção.
     Roll  → servos angulares (hip abduction) diretamente.
     Pitch → atualiza shared_state["z_pitch_frente"/"z_pitch_tras"] para as threads de locomoção.
+
+    O referencial "reto" é capturado com o robô em modo sleep (deitado no chão)
+    e passado em shared_state["imu_roll_offset"] e shared_state["imu_pitch_offset"].
     """
     kalman_roll  = _KalmanFilter()
     kalman_pitch = _KalmanFilter()
@@ -355,12 +358,15 @@ def stabilize_full_walking(stop_event, robot_leg, shared_state):
             bus.write_byte_data(MPU6050_ADDR, PWR_MGMT_1, 0)
             time.sleep(0.1)
 
+            roll_offset  = shared_state.get("imu_roll_offset",  0.0)
+            pitch_offset = shared_state.get("imu_pitch_offset", 0.0)
+
             ax = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
             ay = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
             az = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
 
-            kalman_roll.angle  = math.degrees(math.atan2(-ax, az))
-            kalman_pitch.angle = math.degrees(math.atan2(ay, math.sqrt(ax**2 + az**2)))
+            kalman_roll.angle  = math.degrees(math.atan2(-ax, az))  - roll_offset
+            kalman_pitch.angle = math.degrees(math.atan2(ay, math.sqrt(ax**2 + az**2))) - pitch_offset
 
             timer = time.time()
             print("[stabilize_full_walking] Ativo — corrigindo roll + pitch durante locomoção.")
@@ -377,7 +383,7 @@ def stabilize_full_walking(stop_event, robot_leg, shared_state):
                 timer = now
 
                 # Roll → angulares
-                roll_acc  = math.degrees(math.atan2(-ax, az))
+                roll_acc  = math.degrees(math.atan2(-ax, az)) - roll_offset
                 roll      = kalman_roll.get_angle(roll_acc, gy, dt)
                 roll_norm = _clamp(roll / ROLL_MAX_DEG, -1.0, 1.0)
 
@@ -391,7 +397,7 @@ def stabilize_full_walking(stop_event, robot_leg, shared_state):
                     ANG_DIR_CENTER - roll_norm * ANG_DIR_RANGE, ANG_DIR_MIN, ANG_DIR_MAX)
 
                 # Pitch → delta de Z repassado às threads de locomoção via shared_state
-                pitch_acc  = math.degrees(math.atan2(ay, math.sqrt(ax**2 + az**2)))
+                pitch_acc  = math.degrees(math.atan2(ay, math.sqrt(ax**2 + az**2))) - pitch_offset
                 pitch      = kalman_pitch.get_angle(pitch_acc, gx, dt)
                 pitch_norm = _clamp(pitch / PITCH_MAX_DEG, -1.0, 1.0)
 
