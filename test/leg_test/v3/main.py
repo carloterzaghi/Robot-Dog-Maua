@@ -586,7 +586,7 @@ class RobotLeg:
         self.smooth_sleep_robot()
         is_standing = False
 
-        DEADZONE = 0.20
+        DEADZONE = 0.15
         def deadzone(val, dz=DEADZONE):
             if abs(val) < dz:
                 return 0.0
@@ -596,8 +596,27 @@ class RobotLeg:
         import threading
         locomotion_threads = []
         locomotion_stop = threading.Event()
-        shared_state = {"speed": 0, "direction": 1, "z_pitch_frente": 0.0, "z_pitch_tras": 0.0, "yaw": 0.0}
+        shared_state = {"speed": 0, "direction": 1, "z_pitch_frente": 0.0, "z_pitch_tras": 0.0, "yaw": 0.0,
+                        "imu_roll_offset": 0.0, "imu_pitch_offset": 0.0}
         current_walking_state = 0 # 0=parado, 1=frente, -1=tras
+
+        try:
+            from auxiliar_funcs.stabilization import _read_word, MPU6050_ADDR, ACCEL_XOUT_H, PWR_MGMT_1
+            import math as _math
+            from smbus2 import SMBus as _SMBus
+            import time as _t
+            with _SMBus(1) as _bus:
+                _bus.write_byte_data(MPU6050_ADDR, PWR_MGMT_1, 0)
+                _t.sleep(0.1)
+                _ax = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
+                _ay = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
+                _az = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
+                shared_state["imu_roll_offset"]  = _math.degrees(_math.atan2(-_ax, _az))
+                shared_state["imu_pitch_offset"] = _math.degrees(_math.atan2(_ay, _math.sqrt(_ax**2 + _az**2)))
+                print(f"[IMU] Referencial zero capturado: Roll={shared_state['imu_roll_offset']:+.2f}° Pitch={shared_state['imu_pitch_offset']:+.2f}°")
+        except Exception as _e:
+            print(f"[IMU] Aviso: não foi possível capturar referencial zero: {_e}")
+
 
         def start_walking():
             from auxiliar_funcs.leg_test import frente_dir, frente_esq, tras_dir, tras_esq
@@ -632,7 +651,10 @@ class RobotLeg:
             shared_state["yaw"] = 0.0
             locomotion_stop.set()
             for t in locomotion_threads:
-                t.join(timeout=2.0)
+                t.join(timeout=3.0)
+            # Aguarda um ciclo extra para garantir que a thread de estabilização
+            # terminou de escrever nos servos antes de smooth_sleep_robot() assumir.
+            time.sleep(0.15)
             locomotion_threads = []
 
         import time
@@ -640,7 +662,7 @@ class RobotLeg:
         pending_walk_direction = 1  # 1=frente, -1=trás
         walk_start_time = 0
         last_axis_y = 0.0
-        DEBOUNCE_TIME = 0.40 # 400ms segurando o analógico para confirmar
+        DEBOUNCE_TIME = 0.15 # 150ms — resposta mais rápida mas ainda com proteção
         
         top_pressed = False
         top_press_time = 0.0
@@ -748,17 +770,6 @@ class RobotLeg:
                                             print("Robô levantado e pronto para andar.")
                                         else:
                                             print("\\n[Botão TOP] Retornando para posição de descanso...")
-                                            struct_start_flexao = {
-                                                "frente_femur_dir":   30,
-                                                "frente_tibia_dir":   60,
-                                                "frente_femur_esq":  150,
-                                                "frente_tibia_esq":  120,
-                                                "tras_femur_dir":   30,
-                                                "tras_tibia_dir":   40,
-                                                "tras_femur_esq":  150,
-                                                "tras_tibia_esq":  135,
-                                            }
-                                            self._smooth_move(struct_start_flexao, 60, 0.02)
                                             self.smooth_sleep_robot()
                                             is_standing = False
                                             print("Robô em repouso (sleep).")
@@ -793,7 +804,7 @@ class RobotLeg:
                         axis_y = deadzone(raw_y)
                         
                         # Eixo Y negativo = para cima (frente) / positivo = para trás
-                        if axis_y <= -0.7:
+                        if axis_y <= -0.35:
                             last_axis_y = axis_y
                             if current_walking_state != 1 and not pending_walk:
                                 # Inicia o timer de debounce para marcha frente
@@ -803,7 +814,7 @@ class RobotLeg:
                             elif current_walking_state == 1:
                                 # Se já está andando para frente, atualiza a força contínua
                                 shared_state["speed"] = abs(axis_y)
-                        elif axis_y >= 0.7:
+                        elif axis_y >= 0.35:
                             last_axis_y = axis_y
                             if current_walking_state != -1 and not pending_walk:
                                 # Inicia o timer de debounce para marcha ré
@@ -826,7 +837,15 @@ class RobotLeg:
                         axis_x = deadzone(raw_x)
                         # Eixo X positivo = direita / negativo = esquerda
                         prev_yaw = shared_state["yaw"]
-                        shared_state["yaw"] = axis_x
+                        # Zera na hora ao voltar pro centro — evita que o decaimento
+                        # exponencial fique "preso" acima do limiar (0.05) usado em
+                        # leg_test.py quando o driver para de emitir eventos ABS_X
+                        # parado no centro (robô continuaria girando mesmo após
+                        # imprimir "Robô PARADO").
+                        if axis_x == 0.0:
+                            shared_state["yaw"] = 0.0
+                        else:
+                            shared_state["yaw"] = 0.7 * prev_yaw + 0.3 * axis_x
                         if abs(axis_x) > 0.1 and abs(prev_yaw) <= 0.1:
                             side = "DIREITA" if axis_x > 0 else "ESQUERDA"
                             print(f"Girando para {side}... (Força: {abs(axis_x):.2f})")
@@ -863,7 +882,25 @@ class RobotLeg:
         import threading
         locomotion_threads = []
         locomotion_stop = threading.Event()
-        shared_state = {"speed": 0, "direction": 1, "z_pitch_frente": 0.0, "z_pitch_tras": 0.0, "yaw": 0.0}
+        shared_state = {"speed": 0, "direction": 1, "z_pitch_frente": 0.0, "z_pitch_tras": 0.0, "yaw": 0.0,
+                        "imu_roll_offset": 0.0, "imu_pitch_offset": 0.0}
+
+        try:
+            from auxiliar_funcs.stabilization import _read_word, MPU6050_ADDR, ACCEL_XOUT_H, PWR_MGMT_1
+            import math as _math
+            from smbus2 import SMBus as _SMBus
+            import time as _t
+            with _SMBus(1) as _bus:
+                _bus.write_byte_data(MPU6050_ADDR, PWR_MGMT_1, 0)
+                _t.sleep(0.1)
+                _ax = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
+                _ay = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
+                _az = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
+                shared_state["imu_roll_offset"]  = _math.degrees(_math.atan2(-_ax, _az))
+                shared_state["imu_pitch_offset"] = _math.degrees(_math.atan2(_ay, _math.sqrt(_ax**2 + _az**2)))
+                print(f"[IMU] Referencial zero capturado: Roll={shared_state['imu_roll_offset']:+.2f}° Pitch={shared_state['imu_pitch_offset']:+.2f}°")
+        except Exception as _e:
+            print(f"[IMU] Aviso: não foi possível capturar referencial zero: {_e}")
 
         def start_walking():
             from auxiliar_funcs.leg_test import frente_dir, frente_esq, tras_dir, tras_esq
@@ -898,7 +935,10 @@ class RobotLeg:
             shared_state["yaw"] = 0.0
             locomotion_stop.set()
             for t in locomotion_threads:
-                t.join(timeout=2.0)
+                t.join(timeout=3.0)
+            # Aguarda um ciclo extra para garantir que a thread de estabilização
+            # terminou de escrever nos servos antes de smooth_sleep_robot() assumir.
+            time.sleep(0.15)
             locomotion_threads = []
 
         try:
