@@ -599,6 +599,7 @@ class RobotLeg:
         shared_state = {"speed": 0, "direction": 1, "z_pitch_frente": 0.0, "z_pitch_tras": 0.0, "yaw": 0.0,
                         "imu_roll_offset": 0.0, "imu_pitch_offset": 0.0}
         current_walking_state = 0 # 0=parado, 1=frente, -1=tras
+        imu_timer = None
 
         try:
             from auxiliar_funcs.stabilization import _read_word, MPU6050_ADDR, ACCEL_XOUT_H, PWR_MGMT_1
@@ -616,6 +617,34 @@ class RobotLeg:
                 print(f"[IMU] Referencial zero capturado: Roll={shared_state['imu_roll_offset']:+.2f}° Pitch={shared_state['imu_pitch_offset']:+.2f}°")
         except Exception as _e:
             print(f"[IMU] Aviso: não foi possível capturar referencial zero: {_e}")
+
+        def schedule_imu_print(delay=2.5):
+            nonlocal imu_timer
+            if imu_timer is not None:
+                imu_timer.cancel()
+            imu_timer = threading.Timer(delay, print_current_imu)
+            imu_timer.start()
+
+        def print_current_imu():
+            try:
+                from auxiliar_funcs.stabilization import _read_word, MPU6050_ADDR, ACCEL_XOUT_H
+                import math as _math
+                from smbus2 import SMBus as _SMBus
+                with _SMBus(1) as _bus:
+                    _ax = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
+                    _ay = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
+                    _az = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
+                    roll_raw  = _math.degrees(_math.atan2(-_ax, _az))
+                    pitch_raw = _math.degrees(_math.atan2(_ay, _math.sqrt(_ax**2 + _az**2)))
+                    # Valores corrigidos pelo offset (o que o estabilizador realmente vê)
+                    roll_corr  = roll_raw  - shared_state.get("imu_roll_offset",  0.0)
+                    pitch_corr = pitch_raw - shared_state.get("imu_pitch_offset", 0.0)
+                    status_roll  = "✓" if abs(roll_corr)  < 2.0 else "✗"
+                    status_pitch = "✓" if abs(pitch_corr) < 2.0 else "✗"
+                    print(f"[MPU] Bruto  → Roll: {roll_raw:+.2f}°  | Pitch: {pitch_raw:+.2f}°")
+                    print(f"[MPU] Erro   → Roll: {roll_corr:+.2f}° {status_roll} | Pitch: {pitch_corr:+.2f}° {status_pitch}  (|<2°| = reto)")
+            except Exception as _e:
+                print(f"[MPU] Erro ao ler dados: {_e}")
 
 
         def start_walking():
@@ -716,6 +745,7 @@ class RobotLeg:
                         start_walking()
                         is_standing = True
                         print("Robô levantado. Use o analógico esquerdo (Cima) para andar.")
+                        schedule_imu_print(2.5)
                     else:
                         print("\n[Botão TOP 2s] Voltando para o modo sleep...")
                         stop_walking()
@@ -768,6 +798,7 @@ class RobotLeg:
                                             start_walking()
                                             is_standing = True
                                             print("Robô levantado e pronto para andar.")
+                                            schedule_imu_print(2.5)
                                         else:
                                             print("\\n[Botão TOP] Retornando para posição de descanso...")
                                             self.smooth_sleep_robot()
@@ -831,6 +862,7 @@ class RobotLeg:
                             if current_walking_state != 0:
                                 print("Robô PARADO.")
                                 current_walking_state = 0
+                                schedule_imu_print(2.0)
 
                     elif event.code == ecodes.ABS_X:
                         raw_x = event.value / 128.0
@@ -851,6 +883,7 @@ class RobotLeg:
                             print(f"Girando para {side}... (Força: {abs(axis_x):.2f})")
                         elif abs(axis_x) <= 0.1 and abs(prev_yaw) > 0.1:
                             print("Robô PARADO.")
+                            schedule_imu_print(2.0)
 
         except KeyboardInterrupt:
             print("\nInterrompido pelo usuário.")
