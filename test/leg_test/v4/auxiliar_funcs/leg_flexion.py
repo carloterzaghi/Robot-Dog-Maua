@@ -111,11 +111,10 @@ def frente_esq(self, stop_event, sync_barrier=None, delay_before_descent=0.0):
 
 def tras_dir(self, stop_event, sync_barrier=None, delay_before_descent=0.0):
     def move(x, z):
+        # Mesma montagem que frente_dir — sem espelhar
         angulos = _ik(x, z)
-        femur_angle = max(0.0, min(180.0, angulos[0] * 180 / m.pi))
-        tibia_angle = max(0.0, min(180.0, angulos[1] * 180 / m.pi - 8))
-        self.tras_femur_dir.angle = femur_angle
-        self.tras_tibia_dir.angle = tibia_angle
+        self.tras_femur_dir.angle = angulos[0] * 180 / m.pi
+        self.tras_tibia_dir.angle = angulos[1] * 180 / m.pi - 8
     _sweep(move, stop_event, sync_barrier=sync_barrier, delay_before_descent=delay_before_descent)
 
 

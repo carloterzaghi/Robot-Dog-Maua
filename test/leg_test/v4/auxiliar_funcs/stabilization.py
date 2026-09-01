@@ -383,7 +383,7 @@ def stabilize_angular(stop_event, robot_leg):
         print(f"[stabilize_angular] Erro: {e}")
 
 
-def stabilize_full_walking(stop_event, robot_leg, shared_state):
+def stabilize_full_walking(stop_event, robot_leg, shared_state, sync_barrier=None):
     """
     Corrige roll e pitch em tempo real durante a locomoção.
     Roll  → servos angulares (hip abduction) diretamente.
@@ -402,9 +402,18 @@ def stabilize_full_walking(stop_event, robot_leg, shared_state):
             roll_offset  = shared_state.get("imu_roll_offset",  0.0)
             pitch_offset = shared_state.get("imu_pitch_offset", 0.0)
 
+            if sync_barrier is not None:
+                try:
+                    sync_barrier.wait(timeout=5)
+                except Exception:
+                    pass
+
             ax = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
             ay = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
             az = _read_word(bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
+            
+            gx = _read_word(bus, MPU6050_ADDR, GYRO_XOUT_H)      / 131.0
+            gz = _read_word(bus, MPU6050_ADDR, GYRO_XOUT_H + 4)  / 131.0
 
             accel_up      = -ay
             accel_right   = az
@@ -412,6 +421,9 @@ def stabilize_full_walking(stop_event, robot_leg, shared_state):
 
             kalman_roll.angle  = math.degrees(math.atan2(accel_right, accel_up)) - roll_offset
             kalman_pitch.angle = math.degrees(math.atan2(accel_forward, accel_up)) - pitch_offset
+            
+            kalman_roll.bias = gx
+            kalman_pitch.bias = gz
 
             timer = time.time()
             print("[stabilize_full_walking] Ativo — corrigindo roll + pitch durante locomoção.")
