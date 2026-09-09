@@ -35,7 +35,7 @@ RAMP_DELAY = 0.025  # intervalo entre passos da rampa (s)
 # Se a frente parece mais esticada que o trás: aumente Z_APOIO_FRENTE (ex: -210)
 # Se o trás parece mais esticado que a frente: aumente Z_APOIO_TRAS  (ex: -210)
 Z_APOIO_FRENTE = -210   # mm — pernas da frente
-Z_APOIO_TRAS   = -219.8   # mm — pernas de trás
+Z_APOIO_TRAS   = -210   # mm — pernas de trás
 
 # ── Atenuação de giro (esquerda/direita) ─────────────────────────────────────
 # Z_APOIO_TRAS está muito perto de MAX_RADIUS (220mm): qualquer excursão em X
@@ -55,7 +55,7 @@ def frente_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
     Z_APOIO  = Z_APOIO_FRENTE
-    Z_SWING  = -154.8
+    Z_SWING  = -130
     X_FRENTE =   90
     X_ATRAS  =  -90
     N_PONTOS =   20
@@ -216,7 +216,7 @@ def frente_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
     Z_APOIO  = Z_APOIO_FRENTE
-    Z_SWING  = -154.8
+    Z_SWING  = -130
     X_FRENTE =   90
     X_ATRAS  =  -90
     N_PONTOS =   20
@@ -288,7 +288,7 @@ def frente_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, syn
     # Ângulos espelhados para a perna esquerda
     femur_alvo   = 180 - angulos_alvo[0] * 180 / m.pi
     tibia_alvo   = 180 - (angulos_alvo[1] * 180 / m.pi - 8)
-    angular_alvo = ANG_MIN if use_angular else 105  # ANG_MIN = início do apoio (defasado)
+    angular_alvo = ANG_MIN if use_angular else 110  # ANG_MIN = início do apoio (defasado)
 
     # Lê ângulos atuais (fallback para o alvo caso None)
     femur_atual   = self.frente_femur_esq.angle   if self.frente_femur_esq.angle   is not None else femur_alvo
@@ -379,8 +379,8 @@ def tras_dir(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
     MAX_Z      = -80
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
-    Z_APOIO  = Z_APOIO_TRAS
-    Z_SWING  = -154.8
+    Z_APOIO  = -220 # TESTAR
+    Z_SWING  = -140
     X_FRENTE =   90
     X_ATRAS  =  -90
     N_PONTOS =   20
@@ -540,7 +540,7 @@ def tras_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
 
     # ── Parâmetros da marcha ──────────────────────────────────────────────────────
     Z_APOIO  = Z_APOIO_TRAS
-    Z_SWING  = -154.8
+    Z_SWING  = -130
     X_FRENTE =   90
     X_ATRAS  =  -90
     N_PONTOS =   20
@@ -609,7 +609,7 @@ def tras_esq(self, stop_event, use_angular=True, delay_before_descent=0.0, sync_
     # Ângulos espelhados para perna esquerda
     femur_alvo   = 180 - angulos_alvo[0] * 180 / m.pi
     tibia_alvo   = 180 - (angulos_alvo[1] * 180 / m.pi - 8)
-    angular_alvo = ANG_MIN if use_angular else 105
+    angular_alvo = ANG_MIN if use_angular else 100
 
     femur_atual   = self.tras_femur_esq.angle   if self.tras_femur_esq.angle   is not None else femur_alvo
     tibia_atual   = self.tras_tibia_esq.angle   if self.tras_tibia_esq.angle   is not None else tibia_alvo
