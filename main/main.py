@@ -217,10 +217,10 @@ class RobotLeg:
 
         # ── Alvos dos angulares ───────────────────────────────────────────────────
         ang_start = {
-            "frente_angular_dir": 100,
-            "frente_angular_esq": 105,
-            "tras_angular_dir": 100,
-            "tras_angular_esq": 105,
+            "frente_angular_dir": 101,
+            "frente_angular_esq": 110,
+            "tras_angular_dir": 97,
+            "tras_angular_esq": 100,
         }
 
         # 1. Tíbias e fêmures da frente e tras
@@ -371,24 +371,24 @@ class RobotLeg:
         current_walking_state = 0 # 0=parado, 1=frente, -1=tras
         imu_timer = None
 
-        try:
-            from auxiliar_funcs.stabilization import _read_word, MPU6050_ADDR, ACCEL_XOUT_H, PWR_MGMT_1
-            import math as _math
-            from smbus2 import SMBus as _SMBus
-            import time as _t
-            with _SMBus(1) as _bus:
-                _bus.write_byte_data(MPU6050_ADDR, PWR_MGMT_1, 0)
-                _t.sleep(0.1)
-                _ax = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
-                _ay = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
-                _az = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
-                # Mapeamento: +X=TRÁS, +Y=BAIXO (ay=-1g), +Z=DIREITA
-                # roll=atan2(az, -ay), pitch=atan2(-ax, -ay)
-                shared_state["imu_roll_offset"]  = _math.degrees(_math.atan2(_az, -_ay))
-                shared_state["imu_pitch_offset"] = _math.degrees(_math.atan2(-_ax, -_ay))
-                print(f"[IMU] Referencial zero capturado: Roll={shared_state['imu_roll_offset']:+.2f}° Pitch={shared_state['imu_pitch_offset']:+.2f}°")
-        except Exception as _e:
-            print(f"[IMU] Aviso: não foi possível capturar referencial zero: {_e}")
+        # try:
+        #     from auxiliar_funcs.stabilization import _read_word, MPU6050_ADDR, ACCEL_XOUT_H, PWR_MGMT_1
+        #     import math as _math
+        #     from smbus2 import SMBus as _SMBus
+        #     import time as _t
+        #     with _SMBus(1) as _bus:
+        #         _bus.write_byte_data(MPU6050_ADDR, PWR_MGMT_1, 0)
+        #         _t.sleep(0.1)
+        #         _ax = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
+        #         _ay = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
+        #         _az = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
+        #         # Mapeamento: +X=TRÁS, +Y=BAIXO (ay=-1g), +Z=DIREITA
+        #         # roll=atan2(az, -ay), pitch=atan2(-ax, -ay)
+        #         shared_state["imu_roll_offset"]  = _math.degrees(_math.atan2(_az, -_ay))
+        #         shared_state["imu_pitch_offset"] = _math.degrees(_math.atan2(-_ax, -_ay))
+        #         print(f"[IMU] Referencial zero capturado: Roll={shared_state['imu_roll_offset']:+.2f}° Pitch={shared_state['imu_pitch_offset']:+.2f}°")
+        # except Exception as _e:
+        #     print(f"[IMU] Aviso: não foi possível capturar referencial zero: {_e}")
 
         def schedule_imu_print(delay=2.5):
             nonlocal imu_timer
@@ -398,40 +398,41 @@ class RobotLeg:
             imu_timer.start()
 
         def print_current_imu():
-            try:
-                from auxiliar_funcs.stabilization import _read_word, MPU6050_ADDR, ACCEL_XOUT_H
-                import math as _math
-                from smbus2 import SMBus as _SMBus
-                with _SMBus(1) as _bus:
-                    _ax = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
-                    _ay = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
-                    _az = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
-                    # Mapeamento: +X=TRÁS, +Y=BAIXO, +Z=DIREITA
-                    roll_raw  = _math.degrees(_math.atan2(_az, -_ay))
-                    pitch_raw = _math.degrees(_math.atan2(-_ax, -_ay))
-                    # Valores corrigidos pelo offset (o que o estabilizador realmente vê)
-                    roll_corr  = roll_raw  - shared_state.get("imu_roll_offset",  0.0)
-                    pitch_corr = pitch_raw - shared_state.get("imu_pitch_offset", 0.0)
-                    status_roll  = "✓" if abs(roll_corr)  < 2.0 else "✗"
-                    status_pitch = "✓" if abs(pitch_corr) < 2.0 else "✗"
-                    print(f"[MPU] Bruto  → Roll: {roll_raw:+.2f}°  | Pitch: {pitch_raw:+.2f}°")
-                    print(f"[MPU] Erro   → Roll: {roll_corr:+.2f}° {status_roll} | Pitch: {pitch_corr:+.2f}° {status_pitch}  (|<2°| = reto)")
-            except Exception as _e:
-                print(f"[MPU] Erro ao ler dados: {_e}")
+            pass
+            # try:
+            #     from auxiliar_funcs.stabilization import _read_word, MPU6050_ADDR, ACCEL_XOUT_H
+            #     import math as _math
+            #     from smbus2 import SMBus as _SMBus
+            #     with _SMBus(1) as _bus:
+            #         _ax = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H)     / 16384.0
+            #         _ay = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 2) / 16384.0
+            #         _az = _read_word(_bus, MPU6050_ADDR, ACCEL_XOUT_H + 4) / 16384.0
+            #         # Mapeamento: +X=TRÁS, +Y=BAIXO, +Z=DIREITA
+            #         roll_raw  = _math.degrees(_math.atan2(_az, -_ay))
+            #         pitch_raw = _math.degrees(_math.atan2(-_ax, -_ay))
+            #         # Valores corrigidos pelo offset (o que o estabilizador realmente vê)
+            #         roll_corr  = roll_raw  - shared_state.get("imu_roll_offset",  0.0)
+            #         pitch_corr = pitch_raw - shared_state.get("imu_pitch_offset", 0.0)
+            #         status_roll  = "✓" if abs(roll_corr)  < 2.0 else "✗"
+            #         status_pitch = "✓" if abs(pitch_corr) < 2.0 else "✗"
+            #         print(f"[MPU] Bruto  → Roll: {roll_raw:+.2f}°  | Pitch: {pitch_raw:+.2f}°")
+            #         print(f"[MPU] Erro   → Roll: {roll_corr:+.2f}° {status_roll} | Pitch: {pitch_corr:+.2f}° {status_pitch}  (|<2°| = reto)")
+            # except Exception as _e:
+            #     print(f"[MPU] Erro ao ler dados: {_e}")
 
         def start_walking():
             from auxiliar_funcs.leg_test import frente_dir, frente_esq, tras_dir, tras_esq
-            from auxiliar_funcs.stabilization import stabilize_full_walking
+            # from auxiliar_funcs.stabilization import stabilize_full_walking
             nonlocal locomotion_threads, locomotion_stop
             locomotion_stop.clear()
             leg_map = {
                 "frente_dir": frente_dir, "frente_esq": frente_esq,
                 "tras_dir": tras_dir, "tras_esq": tras_esq
             }
-            sync_barrier = threading.Barrier(5)
+            sync_barrier = threading.Barrier(4) # 4 em vez de 5 sem estabilização
             locomotion_threads = []
             for leg, func in leg_map.items():
-                delay_val = 0.8 if "tras" in leg else 0.0
+                delay_val = 0.5 if "tras" in leg else 0.0
                 t = threading.Thread(
                     target=func,
                     args=(self, locomotion_stop, False, delay_val, sync_barrier, shared_state),
@@ -439,13 +440,13 @@ class RobotLeg:
                 )
                 locomotion_threads.append(t)
                 t.start()
-            stab_t = threading.Thread(
-                target=stabilize_full_walking,
-                args=(locomotion_stop, self, shared_state, sync_barrier),
-                daemon=True
-            )
-            locomotion_threads.append(stab_t)
-            stab_t.start()
+            # stab_t = threading.Thread(
+            #     target=stabilize_full_walking,
+            #     args=(locomotion_stop, self, shared_state, sync_barrier),
+            #     daemon=True
+            # )
+            # locomotion_threads.append(stab_t)
+            # stab_t.start()
 
         def stop_walking():
             nonlocal locomotion_threads, locomotion_stop
