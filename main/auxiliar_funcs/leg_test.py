@@ -7,23 +7,32 @@ para que os scripts em test/ continuem funcionando sem modificação.
 A implementação real foi movida para core/leg.py (classe Leg).
 
 NOTA: Para novos scripts, use core/leg.py diretamente.
+
+IMPORTANTE: Todas as escritas de ângulo passam por ServoManager.set_angle()
+para que os offsets de configs/calibration.json sejam sempre respeitados.
 """
 
 import threading
 import time
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from configs.robot_config import LEG_CONFIG, N_RAMP, RAMP_DELAY, GAIT_PARAMS
 from core.kinematics import cubic_bezier, ease, ik_to_servo_angles
 
+if TYPE_CHECKING:
+    from core.servo_manager import ServoManager
+
 
 def _run_leg(
     leg_name: str,
-    # Servos da perna (passados por referência a partir de self)
-    femur_srv,
-    angular_srv,
-    tibia_srv,
+    # Nomes dos servos da perna (para acessar via ServoManager)
+    femur_name: str,
+    angular_name: str,
+    tibia_name: str,
+    # ServoManager — aplica offsets de calibration.json automaticamente
+    mgr: "ServoManager",
     # Parâmetros de configuração
     mirror: bool,
     phase: str,
@@ -39,7 +48,15 @@ def _run_leg(
     sync_barrier,
     shared_state: dict | None,
 ) -> None:
-    """Lógica unificada de locomoção para qualquer perna."""
+    """Lógica unificada de locomoção para qualquer perna.
+
+    Toda escrita de ângulo é feita via mgr.set_angle() para que
+    os offsets de configs/calibration.json sejam sempre aplicados.
+    """
+    # Atalhos para os objetos servo (só para leitura de .angle)
+    femur_srv   = mgr[femur_name]
+    angular_srv = mgr[angular_name]
+    tibia_srv   = mgr[tibia_name]
 
     z_apoio_base = gait["z_apoio"]
     z_swing      = gait["z_swing"]
@@ -68,9 +85,9 @@ def _run_leg(
     for i in range(N_RAMP):
         if stop_event.is_set():
             return
-        femur_srv.angle   = femur_ramp[i]
-        tibia_srv.angle   = tibia_ramp[i]
-        angular_srv.angle = angular_ramp[i]
+        mgr.set_angle(femur_name,   femur_ramp[i])
+        mgr.set_angle(tibia_name,   tibia_ramp[i])
+        mgr.set_angle(angular_name, angular_ramp[i])
         time.sleep(RAMP_DELAY)
 
     if sync_barrier is not None:
@@ -82,8 +99,8 @@ def _run_leg(
     # ── Loop de marcha ────────────────────────────────────────────────────────
     def move(x: float, z: float) -> None:
         fd, td = ik_to_servo_angles(x, z, mirror=mirror)
-        femur_srv.angle = fd
-        tibia_srv.angle = td
+        mgr.set_angle(femur_name,   fd)
+        mgr.set_angle(tibia_name,   td)
 
     while not stop_event.is_set():
         if shared_state is not None:
@@ -128,7 +145,7 @@ def _run_leg(
                     return
                 move(sx[i], sz[i])
                 if use_angular:
-                    angular_srv.angle = ang_seq[i]
+                    mgr.set_angle(angular_name, ang_seq[i])
                 time.sleep(delay)
 
         def stance():
@@ -138,7 +155,7 @@ def _run_leg(
                     return
                 move(x, z_apoio)
                 if use_angular:
-                    angular_srv.angle = ang_seq[i]
+                    mgr.set_angle(angular_name, ang_seq[i])
                 time.sleep(delay)
 
         if phase == "swing_first":
@@ -151,45 +168,49 @@ def _run_leg(
 
 # ── API pública (backward-compat) ─────────────────────────────────────────────
 
-def frente_dir(self, stop_event, use_angular=True, delay_before_descent=0.0,
-               sync_barrier=None, shared_state=None):
+def frente_dir(self, servo_mgr: "ServoManager", stop_event, use_angular=True,
+               delay_before_descent=0.0, sync_barrier=None, shared_state=None):
     cfg  = LEG_CONFIG["frente_dir"]
     gait = {**GAIT_PARAMS["frente"], "group": "frente"}
     _run_leg("frente_dir",
-             self.frente_femur_dir, self.frente_angular_dir, self.frente_tibia_dir,
+             "frente_femur_dir", "frente_angular_dir", "frente_tibia_dir",
+             servo_mgr,
              cfg["mirror"], cfg["phase"], cfg["ang_min"], cfg["ang_max"],
              cfg["angular_fixed_angle"], gait, cfg.get("turn_scale", 1.0),
              stop_event, use_angular, delay_before_descent, sync_barrier, shared_state)
 
 
-def frente_esq(self, stop_event, use_angular=True, delay_before_descent=0.0,
-               sync_barrier=None, shared_state=None):
+def frente_esq(self, servo_mgr: "ServoManager", stop_event, use_angular=True,
+               delay_before_descent=0.0, sync_barrier=None, shared_state=None):
     cfg  = LEG_CONFIG["frente_esq"]
     gait = {**GAIT_PARAMS["frente"], "group": "frente"}
     _run_leg("frente_esq",
-             self.frente_femur_esq, self.frente_angular_esq, self.frente_tibia_esq,
+             "frente_femur_esq", "frente_angular_esq", "frente_tibia_esq",
+             servo_mgr,
              cfg["mirror"], cfg["phase"], cfg["ang_min"], cfg["ang_max"],
              cfg["angular_fixed_angle"], gait, cfg.get("turn_scale", 1.0),
              stop_event, use_angular, delay_before_descent, sync_barrier, shared_state)
 
 
-def tras_dir(self, stop_event, use_angular=True, delay_before_descent=0.0,
-             sync_barrier=None, shared_state=None):
+def tras_dir(self, servo_mgr: "ServoManager", stop_event, use_angular=True,
+             delay_before_descent=0.0, sync_barrier=None, shared_state=None):
     cfg  = LEG_CONFIG["tras_dir"]
     gait = {**GAIT_PARAMS["tras"], "group": "tras"}
     _run_leg("tras_dir",
-             self.tras_femur_dir, self.tras_angular_dir, self.tras_tibia_dir,
+             "tras_femur_dir", "tras_angular_dir", "tras_tibia_dir",
+             servo_mgr,
              cfg["mirror"], cfg["phase"], cfg["ang_min"], cfg["ang_max"],
              cfg["angular_fixed_angle"], gait, cfg.get("turn_scale", 1.0),
              stop_event, use_angular, delay_before_descent, sync_barrier, shared_state)
 
 
-def tras_esq(self, stop_event, use_angular=True, delay_before_descent=0.0,
-             sync_barrier=None, shared_state=None):
+def tras_esq(self, servo_mgr: "ServoManager", stop_event, use_angular=True,
+             delay_before_descent=0.0, sync_barrier=None, shared_state=None):
     cfg  = LEG_CONFIG["tras_esq"]
     gait = {**GAIT_PARAMS["tras"], "group": "tras"}
     _run_leg("tras_esq",
-             self.tras_femur_esq, self.tras_angular_esq, self.tras_tibia_esq,
+             "tras_femur_esq", "tras_angular_esq", "tras_tibia_esq",
+             servo_mgr,
              cfg["mirror"], cfg["phase"], cfg["ang_min"], cfg["ang_max"],
              cfg["angular_fixed_angle"], gait, cfg.get("turn_scale", 1.0),
              stop_event, use_angular, delay_before_descent, sync_barrier, shared_state)

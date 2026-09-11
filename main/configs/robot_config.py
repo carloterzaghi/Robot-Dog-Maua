@@ -38,7 +38,7 @@ DEFAULT_ANGLES: dict[str, float] = {
     "tras_angular_dir":   100.0,
     "tras_tibia_dir":      90.0,
     "tras_femur_esq":      90.0,
-    "tras_angular_esq":   105.0,
+    "tras_angular_esq":   95.0,
     "tras_tibia_esq":      90.0,
 }
 
@@ -139,15 +139,15 @@ POSE_STAND: dict[str, float] = {
     "frente_tibia_dir":   60.0,
     "frente_femur_esq":  150.0,
     "frente_tibia_esq":  120.0,
-    "tras_femur_dir":     30.0,
+    "tras_femur_dir":     20.0,
     "tras_tibia_dir":     40.0,
     "tras_femur_esq":    150.0,
     "tras_tibia_esq":    135.0,
     # Angulares
     "frente_angular_dir": 101.0,
     "frente_angular_esq": 110.0,
-    "tras_angular_dir":    97.0,
-    "tras_angular_esq":   100.0,
+    "tras_angular_dir":    98.0,
+    "tras_angular_esq":   93.0,
 }
 
 POSE_SLEEP: dict[str, float] = {

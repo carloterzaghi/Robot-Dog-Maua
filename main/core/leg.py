@@ -70,11 +70,6 @@ class Leg:
         self.angular_fixed_angle: float = cfg.get("angular_fixed_angle", 100.0)
         self.turn_scale: float = cfg.get("turn_scale", 1.0)
 
-        # Escala assinada (direction * intensity) do ciclo anterior, usada para
-        # limitar a variação por ciclo e evitar saltos bruscos de posição do pé
-        # quando o sinal de giro/direção muda entre um ciclo de marcha e outro.
-        self._stride_scale: float = 0.0
-
         # Overrides por perna (z_apoio, z_swing) — usa LEG_CONFIG se existir,
         # senão cai no GAIT_PARAMS do grupo.
         gait_defaults = GAIT_PARAMS[self.group]
@@ -89,9 +84,12 @@ class Leg:
         # Convenção de chave no ServoManager: "{posição}_{articulação}_{lado}"
         # Exemplo: name="frente_dir" → "frente_femur_dir", "frente_angular_dir", ...
         _pos, _side = name.rsplit("_", 1)
-        self._femur   = servo_mgr[f"{_pos}_femur_{_side}"]
-        self._angular = servo_mgr[f"{_pos}_angular_{_side}"]
-        self._tibia   = servo_mgr[f"{_pos}_tibia_{_side}"]
+        self._femur_name   = f"{_pos}_femur_{_side}"
+        self._angular_name = f"{_pos}_angular_{_side}"
+        self._tibia_name   = f"{_pos}_tibia_{_side}"
+        self._femur   = servo_mgr[self._femur_name]
+        self._angular = servo_mgr[self._angular_name]
+        self._tibia   = servo_mgr[self._tibia_name]
 
     # ── Propriedades de leitura de ângulo atual ───────────────────────────────
 
@@ -113,10 +111,11 @@ class Leg:
         """
         Move o pé para a posição (x, z) em mm via cinemática inversa.
         O espelhamento para pernas esquerdas é aplicado automaticamente.
+        Os offsets de calibração são aplicados via ServoManager.set_angle().
         """
         femur_deg, tibia_deg = ik_to_servo_angles(x, z, mirror=self.mirror)
-        self._femur.angle = femur_deg
-        self._tibia.angle = tibia_deg
+        self._mgr.set_angle(self._femur_name, femur_deg)
+        self._mgr.set_angle(self._tibia_name, tibia_deg)
 
     # ── Rampa de inicialização ────────────────────────────────────────────────
 
@@ -157,9 +156,9 @@ class Leg:
         for i in range(N_RAMP):
             if stop_event.is_set():
                 return
-            self._femur.angle   = femur_ramp[i]
-            self._tibia.angle   = tibia_ramp[i]
-            self._angular.angle = angular_ramp[i]
+            self._mgr.set_angle(self._femur_name,   femur_ramp[i])
+            self._mgr.set_angle(self._tibia_name,   tibia_ramp[i])
+            self._mgr.set_angle(self._angular_name, angular_ramp[i])
             time.sleep(RAMP_DELAY)
 
     # ── Ciclo de marcha ───────────────────────────────────────────────────────
@@ -170,18 +169,25 @@ class Leg:
         shared_state: dict | None = None,
         use_angular: bool = True,
         sync_barrier: threading.Barrier | None = None,
+        cycle_params_ref: dict | None = None,
+        cycle_ready: threading.Event | None = None,
+        compute_cycle_fn=None,
     ) -> None:
         """
         Executa o loop de marcha contínuo (swing + apoio) até stop_event ser setado.
 
-        Substitui os while loops repetidos nas 4 funções originais de leg_test.py.
-        A ordem swing/apoio é determinada por `self.phase`:
+        A ordem swing/apoio é determinada por ``self.phase``:
           - "swing_first":  swing → apoio  (frente_dir, tras_esq)
           - "stance_first": apoio → swing  (frente_esq, tras_dir)
 
-        O yaw (rotação) inverte a direção para pernas direitas vs esquerdas:
-          - Perna direita: recua ao girar para a direita (yaw > 0).
-          - Perna esquerda: avança ao girar para a direita.
+        Os parâmetros de direction e intensity são calculados centralmente
+        pelo GaitController (via ``compute_cycle_fn``) e compartilhados entre
+        todas as pernas via ``cycle_params_ref``. A thread que chega primeiro
+        à barreira (barrier_id == 0) atua como "líder" e calcula os params;
+        as demais esperam em ``cycle_ready``.
+
+        Isso garante que pernas diagonais SEMPRE recebam os mesmos parâmetros
+        no mesmo ciclo, eliminando a dessincronização durante giros.
 
         sync_barrier: se fornecida, todas as pernas esperam umas pelas outras
         ao final de cada ciclo completo — sem isso a fase entre frente/trás
@@ -197,69 +203,59 @@ class Leg:
         # Chave do z_pitch no shared_state (frente ou tras)
         pitch_key = f"z_pitch_{self.group}"
 
-        # Variação máxima de (direction * intensity) permitida por ciclo de marcha.
-        # Evita que o pé "teleporte" para uma nova posição quando o giro é
-        # acionado ou invertido de um ciclo para o outro (causa do "coice").
-        MAX_SCALE_STEP = 0.35
-
         while not stop_event.is_set():
-            # ── Lê estado compartilhado ───────────────────────────────────────
-            if shared_state is not None:
-                z_pitch = shared_state.get(pitch_key, 0.0)
-                z_apoio = z_apoio_base + z_pitch
-                speed = shared_state.get("speed", 0)
-                yaw   = shared_state.get("yaw", 0.0)
-
-                # Parado: mantém pé no centro e aguarda
-                if speed == 0 and abs(yaw) < 0.05:
-                    self.move_to(0, z_apoio)
-                    self._stride_scale = 0.0
-                    time.sleep(0.05)
+            # ── Sincronização + cálculo centralizado de params ────────────────
+            if sync_barrier is not None:
+                try:
+                    barrier_id = sync_barrier.wait(timeout=2.0)
+                except threading.BrokenBarrierError:
+                    sync_barrier.reset()
+                    continue
+                except Exception:
                     continue
 
-                # Determina direção e intensidade alvo
-                if abs(yaw) > abs(speed):
-                    # Modo giro: direção depende do lado da perna
-                    if self.mirror:
-                        # Perna esquerda avança ao girar para a direita
-                        target_direction = 1 if yaw > 0 else -1
-                    else:
-                        # Perna direita recua ao girar para a direita
-                        target_direction = -1 if yaw > 0 else 1
-                    target_intensity = min(1.0, abs(yaw)) * self.turn_scale
-                else:
-                    target_direction = shared_state.get("direction", 1)
-                    target_intensity = min(1.0, abs(speed))
+                if stop_event.is_set():
+                    return
 
-                # Limita a variação por ciclo para garantir transição suave
-                # (evita salto de posição ao trocar de "andar" para "girar"
-                # ou ao inverter o sentido do giro).
-                target_scale = target_direction * target_intensity
-                delta = target_scale - self._stride_scale
-                delta = max(-MAX_SCALE_STEP, min(MAX_SCALE_STEP, delta))
-                self._stride_scale += delta
+                # Thread líder (barrier_id == 0) calcula os params do ciclo
+                if barrier_id == 0 and compute_cycle_fn is not None:
+                    cycle_ready.clear()
+                    params = compute_cycle_fn()
+                    cycle_params_ref.clear()
+                    cycle_params_ref.update(params)
+                    cycle_ready.set()
+                elif cycle_ready is not None:
+                    # Demais threads: esperam a líder terminar o cálculo
+                    cycle_ready.wait(timeout=2.0)
 
-                intensity = abs(self._stride_scale)
-                direction = 1 if self._stride_scale >= 0 else -1
+                if stop_event.is_set():
+                    return
+
+            # ── Lê parâmetros do ciclo ────────────────────────────────────────
+            if cycle_params_ref and cycle_params_ref.get("idle", False):
+                # Robô parado: mantém pé no centro e aguarda
+                z_pitch = cycle_params_ref.get(pitch_key, 0.0)
+                z_apoio = z_apoio_base + z_pitch
+                self.move_to(0, z_apoio)
+                time.sleep(0.05)
+                continue
+
+            if cycle_params_ref and not cycle_params_ref.get("idle", True):
+                # Parâmetros calculados centralmente pelo GaitController
+                direction = cycle_params_ref["directions"][self.name]
+                intensity = cycle_params_ref["intensities"][self.name]
+                z_pitch = cycle_params_ref.get(pitch_key, 0.0)
+                z_apoio = z_apoio_base + z_pitch
+            elif shared_state is not None:
+                # Fallback: leitura direta do shared_state (sem GaitController)
+                z_pitch = shared_state.get(pitch_key, 0.0)
+                z_apoio = z_apoio_base + z_pitch
+                direction = shared_state.get("direction", 1)
+                intensity = min(1.0, abs(shared_state.get("speed", 1)))
             else:
                 z_apoio   = z_apoio_base
                 direction = 1
                 intensity = 1.0
-
-            # Re-sincroniza com as demais pernas antes de iniciar o próximo
-            # ciclo completo, corrigindo qualquer deriva de fase acumulada.
-            if sync_barrier is not None:
-                try:
-                    sync_barrier.wait(timeout=2.0)
-                except threading.BrokenBarrierError:
-                    # Uma perna atrasou/timeout: reseta para voltar a sincronizar
-                    # no próximo ciclo em vez de desativar o sync permanentemente.
-                    sync_barrier.reset()
-                except Exception:
-                    pass
-
-                if stop_event.is_set():
-                    return
 
             x_f = x_frente * intensity
             x_b = x_atras  * intensity
@@ -324,7 +320,7 @@ class Leg:
                 return
             self.move_to(swing_x[i], swing_z[i])
             if use_angular:
-                self._angular.angle = ang_seq[i]
+                self._mgr.set_angle(self._angular_name, ang_seq[i])
             time.sleep(delay)
 
     def _stance_phase(
@@ -352,6 +348,6 @@ class Leg:
                 return
             self.move_to(x, z_apoio)
             if use_angular:
-                self._angular.angle = ang_seq[i]
+                self._mgr.set_angle(self._angular_name, ang_seq[i])
             time.sleep(delay)
 

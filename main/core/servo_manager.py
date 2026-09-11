@@ -82,6 +82,22 @@ class ServoManager:
         """Retorna uma cópia do dict {nome: servo}."""
         return dict(self._servos)
 
+    def set_angle(self, name: str, angle: float) -> None:
+        """
+        Escreve um ângulo em um servo aplicando o offset de calibração
+        e limitando ao intervalo [0°, 180°].
+
+        Usar em vez de ``servo.angle = valor`` sempre que o ângulo vier
+        de IK ou de uma sequência de marcha, para que a calibração seja
+        respeitada também durante a locomoção.
+
+        Args:
+            name:  nome do servo (ex: \"frente_femur_dir\").
+            angle: ângulo alvo em graus (antes do offset).
+        """
+        calibrated = max(0.0, min(180.0, angle + self.offsets.get(name, 0.0)))
+        self._servos[name].angle = calibrated
+
     # ── Calibração ────────────────────────────────────────────────────────────
 
     def _load_calibration(self) -> dict[str, float]:
