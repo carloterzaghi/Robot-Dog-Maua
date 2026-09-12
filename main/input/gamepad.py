@@ -16,6 +16,7 @@ import time
 from typing import TYPE_CHECKING
 
 from motion import locomotion, poses
+from motion.stabilization import stabilize_full_walking
 
 if TYPE_CHECKING:
     from core.leg import Leg
@@ -59,6 +60,8 @@ class GamepadReader:
             ecodes.BTN_NORTH, ecodes.BTN_WEST, ecodes.BTN_TOP,
             getattr(ecodes, "BTN_Y", 308),
             getattr(ecodes, "BTN_X", 307),
+            getattr(ecodes, "BTN_TL", 310),
+            getattr(ecodes, "BTN_TR", 311),
             ecodes.BTN_START, 315,
         })
         self.ALLOWED_AXES: frozenset[int] = frozenset({ecodes.ABS_Y, ecodes.ABS_X})
@@ -139,6 +142,25 @@ class GamepadReader:
         return 0.0, 32767.0
 
 
+# ── Adaptador ServoManager → interface robot_leg ──────────────────────────────
+
+class _ServoManagerAdapter:
+    """
+    Faz bridge entre a interface de atributos usada por stabilize_full_walking
+    (ex: robot_leg.frente_angular_dir) e o ServoManager baseado em dict
+    (ex: servo_mgr["frente_angular_dir"]).
+    """
+
+    def __init__(self, mgr: "ServoManager") -> None:
+        self._mgr = mgr
+
+    def __getattr__(self, name: str):
+        try:
+            return self._mgr[name]
+        except KeyError:
+            raise AttributeError(f"Servo '{name}' não encontrado no ServoManager") from None
+
+
 # ── RobotController ───────────────────────────────────────────────────────────
 
 class RobotController:
@@ -168,10 +190,15 @@ class RobotController:
         self._mgr  = servo_mgr
         self._legs = legs
         self._gait = locomotion.GaitController(legs)
+        self._robot_leg_adapter = _ServoManagerAdapter(servo_mgr)
 
         self._is_standing    = False
         self._transitioning  = False
         self._last_toggle_ts = 0.0
+
+        # Thread e evento de parada do IMU
+        self._imu_stop_event: threading.Event | None = None
+        self._imu_thread:     threading.Thread | None = None
 
         # Estado compartilhado entre threads (locomoção + estabilização)
         self.shared_state: dict = {
@@ -187,7 +214,7 @@ class RobotController:
     # ── Ponto de entrada ──────────────────────────────────────────────────────
 
     def run(self) -> None:
-        """Loop principal do modo Gamesir."""
+        """Loop principal do modo Gamesir (cria um novo GamepadReader internamente)."""
         print("\nProcurando controle Gamesir...")
         try:
             reader = GamepadReader()
@@ -195,6 +222,29 @@ class RobotController:
             print(f"Erro: {exc}")
             return
 
+        reader.grab()
+        try:
+            self._run_loop(reader)
+        finally:
+            reader.ungrab()
+
+    def run_with_reader(self, reader: "GamepadReader", skip_initial_sleep: bool = False) -> None:
+        """
+        Loop principal do modo Gamesir usando um GamepadReader já aberto.
+
+        Usado quando o reader foi instanciado em main.py e compartilhado
+        com o modo de calibração, evitando abrir uma segunda conexão.
+        O grab/ungrab é responsabilidade do chamador.
+
+        Args:
+            reader:             GamepadReader já inicializado e com grab ativo.
+            skip_initial_sleep: se True, não executa poses.sleep() ao entrar
+                                no loop (usado quando o boot já o fez).
+        """
+        self._run_loop(reader, skip_initial_sleep=skip_initial_sleep)
+
+    def _run_loop(self, reader: "GamepadReader", skip_initial_sleep: bool = False) -> None:
+        """Lógica interna do loop Gamesir (reutilizada por run() e run_with_reader())."""
         ecodes = reader._ecodes
         print(f"Controle conectado: {reader.name} ({reader.path})")
 
@@ -205,13 +255,13 @@ class RobotController:
         print(" -> Pressione [Botão Y] novamente para RETORNAR ao modo sleep.")
         print(" -> Pressione [START] ou Ctrl+C para SAIR.")
 
-        poses.sleep(self._mgr)
+        if not skip_initial_sleep:
+            poses.sleep(self._mgr)
 
         # Estado de botão de ação (pressão longa vs curta)
         action_pressed    = False
         action_press_time = 0.0
 
-        reader.grab()
         try:
             for event in reader.events():
 
@@ -264,7 +314,13 @@ class RobotController:
             print("\nInterrompido pelo usuário.")
         finally:
             self._gait.stop()
-            reader.ungrab()
+            # Para a thread do IMU (se ativa) antes de deitar o robô
+            if self._imu_stop_event is not None:
+                self._imu_stop_event.set()
+            if self._imu_thread is not None:
+                self._imu_thread.join(timeout=2.0)
+                self._imu_thread = None
+                self._imu_stop_event = None
             print("Retornando robô ao modo sleep...")
             poses.sleep(self._mgr)
             print("Modo Gamesir finalizado.")
@@ -330,9 +386,25 @@ class RobotController:
                 poses.stand(self._mgr)
                 self._gait.start(self.shared_state)
                 self._is_standing = True
+                # Inicia thread do IMU (estabilização roll + pitch) [DESATIVADO]
+                # self._imu_stop_event = threading.Event()
+                # self._imu_thread = threading.Thread(
+                #     target=stabilize_full_walking,
+                #     args=(self._imu_stop_event, self._robot_leg_adapter, self.shared_state),
+                #     daemon=True,
+                #     name="imu-stabilizer",
+                # )
+                # self._imu_thread.start()
                 print("Robô levantado e pronto para andar.")
             else:
                 print("\n[Ação] Retornando para posição de descanso...")
+                # Para a thread do IMU antes de deitar
+                if self._imu_stop_event is not None:
+                    self._imu_stop_event.set()
+                if self._imu_thread is not None:
+                    self._imu_thread.join(timeout=2.0)
+                    self._imu_thread = None
+                    self._imu_stop_event = None
                 poses.sleep(self._mgr)
                 self._is_standing = False
                 print("Robô em repouso (sleep). Pressione Botão Y para levantar.")
