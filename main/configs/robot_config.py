@@ -6,39 +6,40 @@ Qualquer ajuste (canal, ângulo, velocidade) deve ser feito apenas neste arquivo
 """
 
 # ── Mapeamento de canais PCA9685 (placa v4) ───────────────────────────────────
-# Cada chave é "<posição>_<articulação>_<lado>", valor é o canal do PCA9685.
+# Cada chave é "<posição>_<articulação>_<lado>", valor é o canal do PCA9685. Atualizado em 12/09/2026
 SERVO_CHANNELS: dict[str, int] = {
     # Pata Frontal Direita
-    "frente_femur_dir":    10,
-    "frente_angular_dir":   9,
-    "frente_tibia_dir":     8,
+    "frente_femur_dir":     2,
+    "frente_angular_dir":   1,
+    "frente_tibia_dir":     0,
     # Pata Frontal Esquerda
-    "frente_femur_esq":    13,
-    "frente_angular_esq":  14,
-    "frente_tibia_esq":    15,
+    "frente_femur_esq":    7,
+    "frente_angular_esq":  6,
+    "frente_tibia_esq":    5,
     # Pata Traseira Direita
-    "tras_femur_dir":       7,
-    "tras_angular_dir":     6,
-    "tras_tibia_dir":       5,
+    "tras_femur_dir":       13,
+    "tras_angular_dir":     14,
+    "tras_tibia_dir":       15,
     # Pata Traseira Esquerda
-    "tras_femur_esq":       2,
-    "tras_angular_esq":     1,
-    "tras_tibia_esq":       0,
+    "tras_femur_esq":       8,
+    "tras_angular_esq":     9,
+    "tras_tibia_esq":       10,
 }
+  
 
 # ── Ângulos base da posição default (referência para cálculo de offsets) ──────
 DEFAULT_ANGLES: dict[str, float] = {
     "frente_femur_dir":    90.0,
-    "frente_angular_dir": 100.0,
+    "frente_angular_dir": 101.0,
     "frente_tibia_dir":    90.0,
     "frente_femur_esq":    90.0,
-    "frente_angular_esq": 105.0,
+    "frente_angular_esq": 110.0,
     "frente_tibia_esq":    90.0,
     "tras_femur_dir":      90.0,
-    "tras_angular_dir":   100.0,
+    "tras_angular_dir":   102.0,
     "tras_tibia_dir":      90.0,
     "tras_femur_esq":      90.0,
-    "tras_angular_esq":   95.0,
+    "tras_angular_esq":   100.0,
     "tras_tibia_esq":      90.0,
 }
 
@@ -133,50 +134,51 @@ RAMP_DELAY: float = 0.025   # s — delay entre passos da rampa
 # Ângulos absolutos (sem calibração) para transições rápidas.
 # A transição final passa pela calibração dentro de ServoManager.smooth_move().
 
+# Este são os angulos para quando o robô sair do modo deitado para ficar em pé, não são os servos quando ele está de pé.
 POSE_STAND: dict[str, float] = {
     # Tíbias e fêmures
-    "frente_femur_dir":   30.0,
-    "frente_tibia_dir":   60.0,
-    "frente_femur_esq":  150.0,
-    "frente_tibia_esq":  120.0,
+    "frente_femur_dir":   10.0,
+    "frente_tibia_dir":   30.0,
+    "frente_femur_esq":  165.0,
+    "frente_tibia_esq":  155.0,
     "tras_femur_dir":     20.0,
-    "tras_tibia_dir":     40.0,
-    "tras_femur_esq":    150.0,
-    "tras_tibia_esq":    135.0,
+    "tras_tibia_dir":     20.0,
+    "tras_femur_esq":    170.0,
+    "tras_tibia_esq":    150.0,
     # Angulares
     "frente_angular_dir": 101.0,
     "frente_angular_esq": 110.0,
-    "tras_angular_dir":    98.0,
-    "tras_angular_esq":   93.0,
+    "tras_angular_dir":   102.0,
+    "tras_angular_esq":   100.0,
 }
 
 POSE_SLEEP: dict[str, float] = {
     # Fase 1 — posição intermediária (fêmures/tíbias)
-    "frente_femur_dir":   80.0,
-    "frente_tibia_dir":  120.0,
-    "frente_femur_esq":  100.0,
-    "frente_tibia_esq":   70.0,
-    "tras_femur_dir":     80.0,
-    "tras_tibia_dir":    120.0,
-    "tras_femur_esq":    100.0,
-    "tras_tibia_esq":     70.0,
+    "frente_femur_dir":   15.0,  #S10
+    "frente_tibia_dir":   35.0,  #S8
+    "frente_femur_esq":  160.0,  #S13
+    "frente_tibia_esq":  150.0,  #S15
+    "tras_femur_dir":     25.0,  #S7
+    "tras_tibia_dir":     30.0,  #S5
+    "tras_femur_esq":    160.0,  #S2
+    "tras_tibia_esq":    140.0,  #S0
     # Fase 2 — angulares deitados
-    "frente_angular_dir":  70.0,
-    "frente_angular_esq": 135.0,
-    "tras_angular_dir":   135.0,
-    "tras_angular_esq":    70.0,
+    "frente_angular_dir":  78.0, #S9
+    "frente_angular_esq": 123.0, #S14
+    "tras_angular_dir":   123.0, #S6
+    "tras_angular_esq":    85.0, #S1
 }
 
 # Pose intermediária antes de deitar (fêmures e tíbias dobram primeiro)
 POSE_SLEEP_STRUCT: dict[str, float] = {
-    "frente_femur_dir":   30.0,
-    "frente_tibia_dir":   60.0,
-    "frente_femur_esq":  150.0,
-    "frente_tibia_esq":  120.0,
-    "tras_femur_dir":     30.0,
-    "tras_tibia_dir":     60.0,
-    "tras_femur_esq":    150.0,
-    "tras_tibia_esq":    120.0,
+    "frente_femur_dir":   10.0,
+    "frente_tibia_dir":   30.0,
+    "frente_femur_esq":  165.0,
+    "frente_tibia_esq":  155.0,
+    "tras_femur_dir":     20.0,
+    "tras_tibia_dir":     20.0,
+    "tras_femur_esq":    170.0,
+    "tras_tibia_esq":    150.0,
 }
 
 # ── Parâmetros suaves de movimentação ─────────────────────────────────────────
