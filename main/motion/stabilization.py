@@ -8,17 +8,17 @@ da versão original para compatibilidade.
 Roll  → servos angulares (canais 9, 14, 6, 1) compensam inclinação lateral.
 Pitch → servos fêmur e tíbia compensam inclinação frontal via IK variando Z.
 
-Montagem do IMU (PCB Nova — parede lateral esquerda):
-  +X → TRÁS   (oposto à frente do robô)
-  +Y → BAIXO  (ay = −1g quando nivelado)
-  +Z → DIREITA
+Montagem do IMU (PCB — parede lateral DIREITA):
+  +X → FRENTE  (frente do robô)
+  +Y → BAIXO   (ay = −1g quando nivelado)
+  +Z → ESQUERDA
 
-  Mapeamento corrigido:
-    accel_up      = −ay
-    accel_right   = az
-    accel_forward = −ax
-    gyro_roll_rate  = gx  (positivo = roll esquerda)
-    gyro_pitch_rate = gz  (positivo = pitch nariz cima)
+  Mapeamento:
+    accel_up        = −ay
+    accel_right     = −az   (Z aponta para esquerda, então direita = −Z)
+    accel_forward   =  ax   (X aponta para frente)
+    gyro_roll_rate  = −gx   (positivo = roll direita; sinal invertido em relação ao eixo físico)
+    gyro_pitch_rate = −gz   (positivo = pitch nariz cima; sinal invertido em relação ao eixo físico)
 """
 
 import math
@@ -54,6 +54,18 @@ PITCH_MAX_DEG = 30.0
 
 # Frequência do loop de controle (~20 Hz)
 LOOP_DELAY = 0.05
+
+# ── Compensação de centro de massa ───────────────────────────────────────────────────
+# CoM medido a 48 mm ao longo do eixo +Z do IMU (= ESQUERDA do robô na
+# montagem atual). Para equilibrar, o corpo deve manter um lean para DIREITA
+# (roll negativo na convenção: roll+ = lean esquerda).
+#
+# Ângulo-alvo: lean_alvo = -atan(COM_OFFSET_Z_MM / |Z_NOMINAL|)
+#   = -atan(48 / 150) ≈ -17.7°
+#
+# Se a correção for na direção errada, inverta o sinal de COM_OFFSET_Z_MM.
+COM_OFFSET_Z_MM = 48.0   # mm — deslocamento do CoM no eixo +Z do IMU (ESQUERDA)
+_COM_ROLL_TARGET_DEG = -math.degrees(math.atan2(COM_OFFSET_Z_MM, abs(Z_NOMINAL)))
 
 
 # ── Utilitários I2C ───────────────────────────────────────────────────────────
@@ -154,8 +166,8 @@ def stabilize(robot_leg, stop_event) -> None:
         # Seed dos filtros de Kalman com leitura inicial
         ax, ay, az, gx, gz = _read_imu(bus)
         accel_up      = -ay
-        accel_right   = az
-        accel_forward = -ax
+        accel_right   = -az
+        accel_forward =  ax
         kalman_roll.angle  = math.degrees(math.atan2(accel_right, accel_up))
         kalman_pitch.angle = math.degrees(math.atan2(accel_forward, accel_up))
 
@@ -209,8 +221,8 @@ def stabilize(robot_leg, stop_event) -> None:
         while not stop_event.is_set():
             ax, ay, az, gx, gz = _read_imu(bus)
             accel_up      = -ay
-            accel_right   = az
-            accel_forward = -ax
+            accel_right   = -az
+            accel_forward =  ax
 
             now   = time.time()
             dt    = now - timer
@@ -218,13 +230,13 @@ def stabilize(robot_leg, stop_event) -> None:
 
             # Roll → angulares
             roll_acc  = math.degrees(math.atan2(accel_right, accel_up))
-            roll      = kalman_roll.get_angle(roll_acc, gx, dt)
-            corr_roll = -_clamp(roll / ROLL_MAX_DEG, -1.0, 1.0)
+            roll      = kalman_roll.get_angle(roll_acc, -gx, dt)
+            corr_roll = -_clamp((roll - _COM_ROLL_TARGET_DEG) / ROLL_MAX_DEG, -1.0, 1.0)
             _apply_roll_correction(robot_leg, corr_roll)
 
             # Pitch → fêmur e tíbia via IK
             pitch_acc  = math.degrees(math.atan2(accel_forward, accel_up))
-            pitch      = kalman_pitch.get_angle(pitch_acc, gz, dt)
+            pitch      = kalman_pitch.get_angle(pitch_acc, -gz, dt)
             pitch_norm = _clamp(pitch / PITCH_MAX_DEG, -1.0, 1.0)
 
             z_frente = _clamp(Z_NOMINAL + pitch_norm * Z_PITCH_RANGE, -(220 - 1), -80)
@@ -270,7 +282,7 @@ def stabilize_angular(stop_event, robot_leg) -> None:
             time.sleep(0.1)
 
             ax, ay, az, gx, gz = _read_imu(bus)
-            kalman.angle = math.degrees(math.atan2(az, -ay))
+            kalman.angle = math.degrees(math.atan2(-az, -ay))
 
             timer = time.time()
             print("[stabilize_angular] Ativo — corrigindo roll durante locomoção.")
@@ -281,9 +293,9 @@ def stabilize_angular(stop_event, robot_leg) -> None:
                 dt    = now - timer
                 timer = now
 
-                roll_acc  = math.degrees(math.atan2(az, -ay))
-                roll      = kalman.get_angle(roll_acc, gx, dt)
-                corr_roll = -_clamp(roll / ROLL_MAX_DEG, -1.0, 1.0)
+                roll_acc  = math.degrees(math.atan2(-az, -ay))
+                roll      = kalman.get_angle(roll_acc, -gx, dt)
+                corr_roll = -_clamp((roll - _COM_ROLL_TARGET_DEG) / ROLL_MAX_DEG, -1.0, 1.0)
                 _apply_roll_correction(robot_leg, corr_roll)
 
                 time.sleep(LOOP_DELAY)
@@ -319,10 +331,10 @@ def stabilize_full_walking(stop_event, robot_leg, shared_state: dict, sync_barri
                     pass
 
             ax, ay, az, gx, gz = _read_imu(bus)
-            kalman_roll.angle  = math.degrees(math.atan2(az,  -ay)) - roll_offset
-            kalman_pitch.angle = math.degrees(math.atan2(-ax, -ay)) - pitch_offset
-            kalman_roll.bias   = gx
-            kalman_pitch.bias  = gz
+            kalman_roll.angle  = math.degrees(math.atan2(-az,  -ay)) - roll_offset
+            kalman_pitch.angle = math.degrees(math.atan2( ax,  -ay)) - pitch_offset
+            kalman_roll.bias   = -gx
+            kalman_pitch.bias  = -gz
 
             timer = time.time()
             print("[stabilize_full_walking] Ativo — corrigindo roll + pitch durante locomoção.")
@@ -333,13 +345,13 @@ def stabilize_full_walking(stop_event, robot_leg, shared_state: dict, sync_barri
                 dt    = now - timer
                 timer = now
 
-                roll_acc  = math.degrees(math.atan2(az,  -ay)) - roll_offset
-                roll      = kalman_roll.get_angle(roll_acc, gx, dt)
-                corr_roll = -_clamp(roll / ROLL_MAX_DEG, -1.0, 1.0)
+                roll_acc  = math.degrees(math.atan2(-az,  -ay)) - roll_offset
+                roll      = kalman_roll.get_angle(roll_acc, -gx, dt)
+                corr_roll = -_clamp((roll - _COM_ROLL_TARGET_DEG) / ROLL_MAX_DEG, -1.0, 1.0)
                 _apply_roll_correction(robot_leg, corr_roll)
 
-                pitch_acc  = math.degrees(math.atan2(-ax, -ay)) - pitch_offset
-                pitch      = kalman_pitch.get_angle(pitch_acc, gz, dt)
+                pitch_acc  = math.degrees(math.atan2( ax,  -ay)) - pitch_offset
+                pitch      = kalman_pitch.get_angle(pitch_acc, -gz, dt)
                 pitch_norm = _clamp(pitch / PITCH_MAX_DEG, -1.0, 1.0)
 
                 shared_state["z_pitch_frente"] = _clamp( pitch_norm * Z_PITCH_RANGE, -Z_PITCH_RANGE, Z_PITCH_RANGE)
