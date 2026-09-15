@@ -68,6 +68,7 @@ class Leg:
         self.ang_min:  float = cfg["ang_min"]
         self.ang_max:  float = cfg["ang_max"]
         self.angular_fixed_angle: float = cfg.get("angular_fixed_angle", 100.0)
+        self.walk_scale: float = cfg.get("walk_scale", 1.0)
         self.turn_scale: float = cfg.get("turn_scale", 1.0)
 
         # Overrides por perna (z_apoio, z_swing) — usa LEG_CONFIG se existir,
@@ -183,8 +184,9 @@ class Leg:
         Os parâmetros de direction e intensity são calculados centralmente
         pelo GaitController (via ``compute_cycle_fn``) e compartilhados entre
         todas as pernas via ``cycle_params_ref``. A thread que chega primeiro
-        à barreira (barrier_id == 0) atua como "líder" e calcula os params;
-        as demais esperam em ``cycle_ready``.
+        à barreira (barrier_id == 0) atua como "líder" e calcula os params
+        enquanto as demais aguardam numa segunda passagem pela barreira,
+        que só libera após a publicação — nenhuma perna lê params antigos.
 
         Isso garante que pernas diagonais SEMPRE recebam os mesmos parâmetros
         no mesmo ciclo, eliminando a dessincronização durante giros.
@@ -205,6 +207,11 @@ class Leg:
 
         while not stop_event.is_set():
             # ── Sincronização + cálculo centralizado de params ────────────────
+            # Handshake em DUAS barreiras (evita ler params do ciclo anterior):
+            #   1ª barreira: todas terminam o ciclo anterior juntas.
+            #   A líder calcula e publica os params ENQUANTO as demais já
+            #   estão bloqueadas na 2ª barreira — impossível ler valor antigo.
+            #   2ª barreira: libera as 4 somente após a publicação.
             if sync_barrier is not None:
                 try:
                     barrier_id = sync_barrier.wait(timeout=2.0)
@@ -219,14 +226,21 @@ class Leg:
 
                 # Thread líder (barrier_id == 0) calcula os params do ciclo
                 if barrier_id == 0 and compute_cycle_fn is not None:
-                    cycle_ready.clear()
                     params = compute_cycle_fn()
                     cycle_params_ref.clear()
                     cycle_params_ref.update(params)
-                    cycle_ready.set()
-                elif cycle_ready is not None:
-                    # Demais threads: esperam a líder terminar o cálculo
-                    cycle_ready.wait(timeout=2.0)
+                    if cycle_ready is not None:
+                        cycle_ready.set()
+
+                # 2ª barreira: só libera quando a líder chegar aqui,
+                # ou seja, depois de os params terem sido publicados.
+                try:
+                    sync_barrier.wait(timeout=2.0)
+                except threading.BrokenBarrierError:
+                    sync_barrier.reset()
+                    continue
+                except Exception:
+                    continue
 
                 if stop_event.is_set():
                     return
