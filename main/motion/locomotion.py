@@ -24,13 +24,23 @@ if TYPE_CHECKING:
     from core.leg import Leg
 
 
-# ── Grupos diagonais de marcha (trot) ─────────────────────────────────────────
-# Pernas no mesmo grupo levantam (swing) ao mesmo tempo.
-_DIAGONAL_GROUPS: dict[str, str] = {
-    "frente_dir": "group_a",
-    "tras_esq":   "group_a",
-    "frente_esq": "group_b",
-    "tras_dir":   "group_b",
+# ── Grupos laterais (misturador diferencial) ──────────────────────────────────
+# O giro é feito por velocidade diferencial (tank/skid steer) entre os lados:
+# v_esq = frente + yaw,  v_dir = frente - yaw  (convenção: yaw > 0 = girar à direita)
+#
+# Cada lado pode ter uma direção independente. A alternância das pernas
+# (qual perna levanta ou apoia em um dado momento) é definida pela `phase`
+# e sincronizada através da barreira de threads, mantendo o trot intocado.
+# Isso permite que, em um giro puro (yaw alto), um lado mova suas pernas
+# para frente e o outro para trás simultaneamente (girando o robô no eixo).
+#
+# A ALTERNÂNCIA de fases do trot não depende deste agrupamento: ela é
+# garantida pelo phase de cada perna (LEG_CONFIG) + barreira de sincronia.
+_SIDE_GROUPS: dict[str, str] = {
+    "frente_dir": "right",
+    "tras_dir":   "right",
+    "frente_esq": "left",
+    "tras_esq":   "left",
 }
 
 
@@ -71,12 +81,10 @@ class GaitController:
         self._stop_event = threading.Event()
         self._threads: list[threading.Thread] = []
 
-        # Stride scale gerenciado por GRUPO DIAGONAL (não por perna individual).
-        # Garante que pernas diagonais sempre tenham a mesma amplitude.
-        self._stride_scales: dict[str, float] = {
-            "group_a": 0.0,  # frente_dir + tras_esq
-            "group_b": 0.0,  # frente_esq + tras_dir
-        }
+        # Stride scale gerenciado por LADO (esquerdo/direito).
+        # Representa a velocidade atual com sinal (-1.0 a 1.0) do lado.
+        # A rampa suaviza acelerações e inversões de sentido automaticamente.
+        self._stride_scales: dict[str, float] = {"left": 0.0, "right": 0.0}
 
         # Parâmetros do ciclo atual, preenchidos pela thread líder.
         # Todas as threads lêem deste dict após a barreira.
@@ -102,6 +110,7 @@ class GaitController:
         """
         self._stop_event.clear()
         self._cycle_ready.clear()
+        self._cycle_params.clear()  # não vazar params da sessão anterior
 
         # Reseta stride scales ao iniciar uma nova sessão de locomoção
         for k in self._stride_scales:
@@ -144,9 +153,24 @@ class GaitController:
         """
         Calcula direction e intensity para CADA perna de forma atômica.
 
+        O giro usa um misturador diferencial de VELOCIDADE (com sinal) por lado:
+
+            v_esq = frente + yaw      v_dir = frente - yaw
+
+        (convenção: yaw > 0 = girar à direita; frente = ±|speed|)
+
+        Cada lado pode ter uma direção (frente/trás) independente, permitindo o
+        giro em torno do próprio eixo (skid steer). A sincronia do trot (quais
+        pernas apoiam ou levantam juntas) não é afetada por direções opostas
+        entre lados, sendo garantida puramente pela barreira e fase inicial (phase)
+        de cada perna configurada em `leg.py`.
+
+        Inversões de sentido (frente ↔ trás ou inversões de giro) passam por
+        desaceleração suave: a velocidade em `_stride_scales` passa de positiva
+        para negativa gradualmente, garantindo que a troca de `direction`
+        ocorra com amplitude ~0.
+
         Chamado uma única vez por ciclo pela thread líder (barrier_id == 0).
-        O stride_scale é gerenciado por grupo diagonal, garantindo que
-        pernas no mesmo grupo diagonal SEMPRE tenham a mesma amplitude.
 
         Returns:
             dict com:
@@ -158,10 +182,11 @@ class GaitController:
         """
         speed = shared_state.get("speed", 0)
         yaw   = shared_state.get("yaw", 0.0)
+        if abs(yaw) < 0.05:
+            yaw = 0.0
 
         # Robô parado
-        if speed == 0 and abs(yaw) < 0.05:
-            # Reseta stride scales quando parado
+        if speed == 0 and yaw == 0.0:
             for k in self._stride_scales:
                 self._stride_scales[k] = 0.0
             return {
@@ -170,54 +195,48 @@ class GaitController:
                 "z_pitch_tras":   shared_state.get("z_pitch_tras", 0.0),
             }
 
-        # Determina direção e intensidade alvo POR PERNA
-        directions_target: dict[str, int] = {}
-        if abs(yaw) > abs(speed):
-            # Modo giro: direção depende do lado da perna
-            for name, leg in self._legs.items():
-                if leg.mirror:
-                    # Perna esquerda avança ao girar para a direita
-                    directions_target[name] = 1 if yaw > 0 else -1
-                else:
-                    # Perna direita recua ao girar para a direita
-                    directions_target[name] = -1 if yaw > 0 else 1
-            target_intensity = min(1.0, abs(yaw))
-        else:
-            direction = shared_state.get("direction", 1)
-            for name in self._legs:
-                directions_target[name] = direction
-            target_intensity = min(1.0, abs(speed))
+        # Velocidade longitudinal com sinal (+ frente / − trás)
+        fwd = shared_state.get("direction", 1) * min(1.0, abs(speed))
 
-        # Aplica rampa de stride_scale POR GRUPO DIAGONAL
-        # (garante que pernas diagonais tenham EXATAMENTE a mesma amplitude)
-        directions_final: dict[str, int] = {}
+        # Misturador diferencial: velocidade com sinal de cada lado
+        v_left  = max(-1.0, min(1.0, fwd + yaw))
+        v_right = max(-1.0, min(1.0, fwd - yaw))
+
+        # Agora permitimos que cada lado tenha sua própria direção (tank steer).
+        # A velocidade de cada lado (com sinal) é o alvo.
+        target_side_v = {
+            "left":  v_left,
+            "right": v_right,
+        }
+
+        # Fator de giro (0.0 = só frente/trás, 1.0 = só giro).
+        # Interpola walk_scale ↔ turn_scale quando os comandos são combinados.
+        _denom = abs(fwd) + abs(yaw)
+        turn_factor = abs(yaw) / _denom if _denom > 0.0 else 0.0
+
+        directions_final:  dict[str, int]   = {}
         intensities_final: dict[str, float] = {}
 
-        for group_name in ("group_a", "group_b"):
-            # Pega uma perna representativa do grupo para determinar a direção
-            # (no modo giro, as duas pernas do grupo podem ter direções diferentes,
-            #  então usamos a perna da frente como referência para o stride_scale)
-            group_legs = [n for n, g in _DIAGONAL_GROUPS.items() if g == group_name]
+        for side in ("left", "right"):
+            # Rampa suave de velocidade com sinal (-1.0 a 1.0)
+            # Ao inverter a direção, a amplitude naturalmente passa por 0,
+            # evitando o "tranco" de inversão abrupta em amplitude cheia.
+            current = self._stride_scales[side]
+            delta   = target_side_v[side] - current
+            delta   = max(-self._MAX_SCALE_STEP, min(self._MAX_SCALE_STEP, delta))
+            new_v   = current + delta
+            
+            self._stride_scales[side] = new_v
 
-            # Para o stride_scale, usamos a intensidade e a "direção predominante"
-            # do grupo. No giro, cada perna tem sua própria direção, mas a
-            # AMPLITUDE (intensity) deve ser idêntica.
-            target_scale = target_intensity
-            current = self._stride_scales[group_name]
-            delta = target_scale - current
-            delta = max(-self._MAX_SCALE_STEP, min(self._MAX_SCALE_STEP, delta))
-            self._stride_scales[group_name] = current + delta
+            # A direção e a intensidade (amplitude) são derivadas da velocidade atual
+            side_dir = 1 if new_v >= 0 else -1
+            side_intensity = abs(new_v)
 
-            group_intensity = self._stride_scales[group_name]
-
-            for leg_name in group_legs:
-                directions_final[leg_name] = directions_target[leg_name]
-                intensities_final[leg_name] = group_intensity
-
-        # Aplica turn_scale individual por perna
-        for name, leg in self._legs.items():
-            if abs(yaw) > abs(speed):
-                intensities_final[name] *= leg.turn_scale
+            for leg_name in [n for n, s in _SIDE_GROUPS.items() if s == side]:
+                leg   = self._legs[leg_name]
+                scale = leg.walk_scale + (leg.turn_scale - leg.walk_scale) * turn_factor
+                directions_final[leg_name]  = side_dir
+                intensities_final[leg_name] = side_intensity * scale
 
         return {
             "idle": False,
