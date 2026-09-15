@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from motion import locomotion, poses
 from motion.stabilization import stabilize_full_walking
+from configs.robot_config import GAIT_PARAMS
 
 if TYPE_CHECKING:
     from core.leg import Leg
@@ -248,7 +249,8 @@ class RobotController:
         ecodes = reader._ecodes
         print(f"Controle conectado: {reader.name} ({reader.path})")
 
-        print("\n=== Modo Controle Gamesir ===")
+        z_apoio_frente = GAIT_PARAMS["frente"]["z_apoio"]
+        print(f"\n=== Modo Controle Gamesir (z_apoio atual: {z_apoio_frente}mm) ===")
         print(" -> Robô em modo SLEEP.")
         print(" -> Pressione [Botão Y] para LEVANTAR o robô.")
         print(" -> Use o Analógico Esquerdo (Cima) para andar para frente.")
