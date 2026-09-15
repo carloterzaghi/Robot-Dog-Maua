@@ -51,40 +51,33 @@ MAX_Z:      int = -80   # teto de Z (mais próximo do corpo)
 TIBIA_OFFSET: float = -8.0  # correção angular aplicada à tíbia após IK
 
 # ── Parâmetros de marcha ──────────────────────────────────────────────────────
-# Z_APOIO: altura do pé no chão durante a fase de apoio.
-#   Diminuir (ex: -220) = perna mais esticada (corpo mais alto).
-#   Aumentar (ex: -195) = perna mais dobrada (corpo mais baixo).
-#   Z_APOIO ajustado para -195 para evitar violação do alcance máximo (MAX_RADIUS=220)
-#   durante a passada completa de X=90.
 GAIT_PARAMS: dict[str, dict] = {
     "frente": {
         "z_apoio":  -220,   # mm — altura de apoio das pernas dianteiras
         "z_swing":  -140,   # mm — altura máxima durante o swing
-        "x_frente":   90,   # mm — posição X na frente do ombro
-        "x_atras":   -90,   # mm — posição X atrás do ombro
+        "x_frente":   75,   # mm — posição X na frente do ombro
+        "x_atras":   -75,   # mm — posição X atrás do ombro
         "n_pontos":   20,   # pontos por fase (swing/apoio)
         "delay":    0.015,  # s  — delay entre pontos
     },
     "tras": {
         "z_apoio":  -220,   # mm — altura de apoio das pernas traseiras
         "z_swing":  -140,   # mm — altura máxima durante o swing
-        "x_frente":   90,
-        "x_atras":   -90,
+        "x_frente":   75,
+        "x_atras":   -75,
         "n_pontos":   20,
         "delay":    0.015,
     },
 }
 
-# ── Escala de Giro (Turn Scale) ───────────────────────────────────────────────
-# Define a amplitude do giro para as pernas. Como z_apoio foi rebaixado para -195,
-# as pernas conseguem realizar o percurso total (-90 a 90) sem a IK estourar o limite,
-# permitindo o uso de 1.0 (sincronia perfeita) ou valores menores para giros mais lentos.
-TURN_SCALE: float = 1.0
+# ── Escalas de passo ──────────────────────────────────────────────────────────
+# WALK_SCALE: intensidade ao andar para frente/trás.
+# TURN_SCALE: intensidade ao girar (esquerda/direita). Valores intermediários
+# são interpolados quando os dois comandos são combinados.
+WALK_SCALE: float = 0.8
+TURN_SCALE: float = 0.5
 
 # ── Configuração individual de cada perna ─────────────────────────────────────
-# mirror: True = ângulos espelhados (180° - valor), para pernas do lado esquerdo
-# phase:  "swing_first" | "stance_first" — qual fase inicia o ciclo de marcha
-# ang_min/ang_max: faixa de operação do servo angular desta perna
 LEG_CONFIG: dict[str, dict] = {
     "frente_dir": {
         "group":  "frente",
@@ -93,6 +86,7 @@ LEG_CONFIG: dict[str, dict] = {
         "ang_min": 70,
         "ang_max": 120,
         "angular_fixed_angle": 100,    # ângulo do angular quando use_angular=False
+        "walk_scale": WALK_SCALE,
         "turn_scale": TURN_SCALE,
     },
     "frente_esq": {
@@ -102,6 +96,7 @@ LEG_CONFIG: dict[str, dict] = {
         "ang_min": 90,
         "ang_max": 135,
         "angular_fixed_angle": 110,
+        "walk_scale": WALK_SCALE,
         "turn_scale": TURN_SCALE,
     },
     "tras_dir": {
@@ -111,6 +106,7 @@ LEG_CONFIG: dict[str, dict] = {
         "ang_min": 90,
         "ang_max": 135,
         "angular_fixed_angle": 100,
+        "walk_scale": WALK_SCALE,
         "turn_scale": TURN_SCALE,
         # Usa os defaults do grupo "tras" (z_apoio=-195, z_swing=-115)
     },
@@ -121,6 +117,7 @@ LEG_CONFIG: dict[str, dict] = {
         "ang_min": 70,
         "ang_max": 120,
         "angular_fixed_angle": 100,
+        "walk_scale": WALK_SCALE,
         "turn_scale": TURN_SCALE,
         # Usa os defaults do grupo "tras"
     },
