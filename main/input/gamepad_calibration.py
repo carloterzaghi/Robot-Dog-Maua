@@ -129,15 +129,33 @@ class GamepadCalibration:
 
                 # ── Analógico ─────────────────────────────────────────────────
                 if event.type == ecodes.EV_ABS:
-                    if self._state == CalibState.ADJUSTING and event.code == getattr(ecodes, "ABS_Y", 1):
-                        val_y = self._reader.normalize_axis_y(event.value)
-                        if abs(val_y) >= ANALOG_THRESHOLD:
-                            now = time.monotonic()
-                            if now - self._last_analog_ts >= ANALOG_STEP_DELAY:
-                                self._last_analog_ts = now
-                                delta = 1.0 if val_y < 0 else -1.0
-                                self._adjust_servo(delta)
-                        continue
+                    if self._state == CalibState.ADJUSTING:
+                        now = time.monotonic()
+                        
+                        # Analógico Esquerdo Y
+                        if event.code == getattr(ecodes, "ABS_Y", 1):
+                            val_y = self._reader.normalize_axis_y(event.value)
+                            if abs(val_y) >= ANALOG_THRESHOLD:
+                                if now - self._last_analog_ts >= ANALOG_STEP_DELAY:
+                                    self._last_analog_ts = now
+                                    delta = 1.0 if val_y < 0 else -1.0
+                                    self._adjust_servo(delta)
+                                    
+                        # Gatilho Esquerdo (L2 / LT) -> -1°
+                        elif event.code == getattr(ecodes, "ABS_Z", 2):
+                            if event.value > 20:  # Passou da zona morta do gatilho
+                                if now - self._last_analog_ts >= ANALOG_STEP_DELAY:
+                                    self._last_analog_ts = now
+                                    self._adjust_servo(-1.0)
+                                    
+                        # Gatilho Direito (R2 / RT) -> +1°
+                        elif event.code == getattr(ecodes, "ABS_RZ", 5):
+                            if event.value > 20:  # Passou da zona morta do gatilho
+                                if now - self._last_analog_ts >= ANALOG_STEP_DELAY:
+                                    self._last_analog_ts = now
+                                    self._adjust_servo(1.0)
+                                    
+                    continue
 
                 # ── Botão ─────────────────────────────────────────────────────
                 if event.type == ecodes.EV_KEY and event.value == 1:
