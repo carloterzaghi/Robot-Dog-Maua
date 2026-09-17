@@ -45,7 +45,7 @@ ANG_ESQ_RANGE  = (ANG_ESQ_MAX - ANG_ESQ_MIN) / 2   # 22.5°
 
 # ── Parâmetros de estabilização por pitch ─────────────────────────────────────
 X_NOMINAL     =   0    # mm — posição X neutra
-Z_NOMINAL     = -150   # mm — altura nominal
+Z_NOMINAL     = -220   # mm — altura nominal
 Z_PITCH_RANGE =  40    # mm — faixa máxima de ajuste por pitch
 
 # ── Faixas máximas para normalização ──────────────────────────────────────────
