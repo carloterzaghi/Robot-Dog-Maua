@@ -92,8 +92,9 @@ while True:
         # Atualizar posição dos servos
         #hardware_interface.set_actuator_postions(state.joint_angles)
         set_actuator_postions(abs(-state.joint_angles-config.servo_multipliers), config.pins, kit)
-        #print(np.matrix( abs(-state.joint_angles-config.servo_multipliers)   ))
-        #print("       ")
+        print("Raw Angles")
+        print(np.matrix( state.joint_angles  ))
+        print("       ")
 
 
 

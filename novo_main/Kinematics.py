@@ -223,8 +223,8 @@ def Calculate_IK(r_body_foot, leg_index, config):
     
     len_B = norm([x_, 0, z_])
 
-    if len_B >= (0.230): 
-        len_B = (0.230)
+    if len_B >= (0.245): 
+        len_B = (0.245)
         #rospy.logwarn('target coordinate: [%f %f %f] too far away', x, y, z)
 
     # Após o clamp superior (linha 226), adicionar:
