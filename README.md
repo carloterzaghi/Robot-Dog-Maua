@@ -54,29 +54,73 @@ sudo PYTHONPATH=. env/bin/python3 test/leg_test/v3/main.py
 
 ---
 
+## ⚙️ Iniciar automaticamente no boot (systemd)
+
+O `main/main.py` pode subir sozinho quando o Raspberry Pi liga, via serviço `robot-dog`.
+Arquivos em [`main/systemd/`](main/systemd/):
+
+| Arquivo | Função |
+|---|---|
+| `install_service.sh` | Gera `/etc/systemd/system/robot-dog.service`, ativa no boot e inicia |
+| `robot-dog.service.template` | Modelo da unit (placeholders preenchidos pelo instalador) |
+
+**Instalação (no Raspberry Pi, a partir da raiz do projeto):**
+
+```bash
+sudo bash main/systemd/install_service.sh
+```
+
+O instalador imprime `Python: ... | Usuário: ... | Projeto: ...`. Se essa linha não aparecer, o script no Pi está desatualizado — rode `git pull` e instale de novo.
+
+**O que o serviço faz (e por quê):**
+
+- **Python do venv:** usa `env/bin/python3` (ou `venv`/`.venv`) na raiz do projeto, onde estão `evdev`, `adafruit-servokit` etc. Para forçar outro: `sudo PYTHON=/caminho/python3 bash main/systemd/install_service.sh`.
+- **Roda como `root`:** igual ao `sudo` manual, necessário para ler `/dev/input/event*` (controle) e acessar I2C. Para outro usuário: `sudo RUN_USER=nome bash ...` (ele precisa estar nos grupos `input` e `i2c`).
+- **`PYTHONPATH` e `WorkingDirectory`** apontam para a raiz do projeto (equivale ao `PYTHONPATH=.` do comando manual).
+- **Reinício automático:** `Restart=on-failure`, com intervalo de 5 s.
+
+**Comandos úteis:**
+
+```bash
+systemctl status robot-dog          # estado
+journalctl -u robot-dog -f          # logs ao vivo
+sudo systemctl restart robot-dog    # reiniciar
+sudo systemctl stop robot-dog       # parar (necessário antes de rodar o main.py manualmente)
+sudo systemctl disable robot-dog    # não iniciar mais no boot
+```
+
+**Troubleshooting:**
+
+| Sintoma no `journalctl` | Causa / solução |
+|---|---|
+| `ModuleNotFoundError: No module named 'evdev'` | O serviço está usando o `python3` do sistema, não o do venv. Reinstale com a versão atual do script e confira o venv em `env/` (`pip install -r requirements.txt`) |
+| Falha ao achar o controle | Pare o serviço e teste manualmente; o Bluetooth pode demorar após o boot e o controle precisa estar pareado |
+| Dois processos controlando os servos | Rode `sudo systemctl stop robot-dog` antes de testar manualmente |
+
+---
+
 ## 📁 Estrutura do Projeto
 
 ```
 Robot-Dog-Maua/
-├── docs/                           # Documentação detalhada
-│   ├── cinematica.md               # Cinemática inversa, marcha e estabilização
-│   └── configuracao_sistema.md     # PS3, WiFi fallback, I2C, venv + sudo
-├── lib/
-│   └── connect_ps3_control.py      # Conexão automática do controle PS3
-├── test/
-│   ├── general_test/               # Testes de componentes individuais
-│   │   ├── GY-521_test.py          #   IMU (acelerômetro + giroscópio)
-│   │   ├── servo_test.py           #   Servos individuais
-│   │   ├── ble_control_test.py     #   Controle PS3 (leitura de inputs)
-│   │   └── ble_read.py             #   Listagem de dispositivos /dev/input/
-│   └── leg_test/
-│       ├── v1/                     # Primeira iteração (4-bar linkage)
-│       ├── v2/                     # Segunda iteração
-│       └── v3/                     # Versão atual
-│           ├── main.py             #   Menu principal (locomoção, flexão, estabilização)
-│           ├── ps3_leg_flexion.py   #   Controle de flexão via PS3
-│           ├── angulo_manual.py    #   IK interativa (input X/Z manual)
-│           └── auxiliar_funcs/     #   Módulos de cinemática e controle
+├── main/                       # Versão atual do robô
+│   ├── main.py                 #   Loop principal (estados, joystick, servos)
+│   ├── Config.py               #   Dimensões, posições neutra/deitado, dt, calibração
+│   ├── State.py / Command.py   #   Estado do robô e comandos vindos do controle
+│   ├── Controller.py           #   Controlador de marcha (stance + swing)
+│   ├── Gaits.py                #   Máquina de fases da marcha
+│   ├── StanceController.py     #   Pernas apoiadas no chão
+│   ├── SwingLegController.py   #   Pernas no ar
+│   ├── Kinematics.py           #   Cinemática inversa das 4 pernas
+│   ├── Transformations.py      #   Rotações e transformações
+│   ├── HardwareInterface.py    #   Servos via PCA9685 (I2C) + transições suaves
+│   ├── JoystickInterface.py    #   Leitura do controle (evdev)
+│   └── systemd/                #   Autostart no boot (instalador + unit)
+├── legacy_main/                # Versão anterior, docs e testes históricos
+│   ├── docs/                   #   Cinemática, configuração do sistema (PS3, WiFi, I2C)
+│   ├── test/                   #   Testes de componentes e iterações de perna (v1–v4)
+│   └── lib/                    #   Conexão automática do controle PS3
+├── Testes Interface/           # Scripts de teste de servos e mapeamento do controle
 ├── requirements.txt
 └── README.md
 ```
