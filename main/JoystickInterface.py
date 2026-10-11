@@ -59,11 +59,16 @@ class JoystickInterface:
         self.activate_event = False
         self.trot_event = False
         self.hop_event = False
+        self.sit_event = False
+                        
 
         # Valores anteriores
         self.previous_activate = 0
         self.previous_trot = 0
         self.previous_hop = 0
+        self.previous_sit = 0
+        self.previous_X = 0
+        self.previous_L3 = 0
 
         # Descobre ranges reais dos analógicos
         self.axis_info = {}
@@ -92,6 +97,9 @@ class JoystickInterface:
         self.activate_event = False
         self.trot_event = False
         self.hop_event = False
+        self.A_button = False
+        self.X_button = False
+        self.L3_button = False
 
         try:
             for event in self.device.read():
@@ -111,11 +119,28 @@ class JoystickInterface:
                             self.trot_event = True
                         self.previous_trot = event.value
 
-                    # A (Pulo)
+                    # A (Sentar / Deitar)
                     elif event.code == 304:
-                        if event.value == 1 and self.previous_hop == 0:
-                            self.hop_event = True
-                        self.previous_hop = event.value
+                        if event.value == 1 and self.previous_sit == 0:
+                            self.A_button = True
+                        self.previous_sit = event.value
+
+                    # X
+                    elif event.code == 308:
+                        if event.value == 1 and self.previous_X == 0:
+                            self.X_button = True
+                        self.previous_X = event.value
+
+                    #L3               
+                    elif event.code == 317:
+                        if event.value == 1 and self.previous_L3 == 0:
+                            self.L3_button = True
+                        self.previous_L3 = event.value
+                    # B (Pulo)
+                    # elif event.code == 305:
+                    #     if event.value == 1 and self.previous_hop == 0:
+                    #         self.hop_event = True
+                    #     self.previous_hop = event.value
 
                 # =============================
                 # ANALÓGICOS E D-PAD
@@ -148,6 +173,9 @@ class JoystickInterface:
         command.activate_event = self.activate_event
         command.trot_event = self.trot_event
         command.hop_event = self.hop_event
+        command.A_button = self.A_button
+        command.X_button = self.X_button
+        command.L3_button = self.L3_button
 
         # =============================================
         # VELOCIDADE (com deadband de 8% contra drift)
@@ -165,7 +193,7 @@ class JoystickInterface:
         # =============================================
         # PITCH
         # =============================================
-        pitch = -self.ry * self.config.max_pitch
+        pitch = self.ry * self.config.max_pitch
         pitch = deadband(pitch, self.config.pitch_deadband)
         pitch_rate = clipped_first_order_filter(
             state.pitch,
@@ -178,17 +206,17 @@ class JoystickInterface:
         # =============================================
         # ALTURA - DPAD VERTICAL
         # =============================================
-        command.height = (
+        command.height = np.clip((
             state.height
             - 0.05 * self.config.z_speed * self.dpad_y
-        )
+        ), -0.23, -0.08)
+
 
         # =============================================
         # ROLL - DPAD HORIZONTAL MUDAR AQUI self.config.dt 0.05
         # =============================================
-        command.roll = (
+        command.roll =  np.clip((
             state.roll
             - 0.05 * self.config.roll_speed * self.dpad_x
-        )
-
+        ), -0.20, 0.20)
         return command

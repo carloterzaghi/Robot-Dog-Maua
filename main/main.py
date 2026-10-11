@@ -1,149 +1,150 @@
-"""
-main.py — Ponto de entrada de produção do robô quadrúpede (Robot-Dog-Maua).
+import numpy as np
+import time
+#from IMU import IMU
+from Controller import Controller
+from JoystickInterface import JoystickInterface
+from State import State, BehaviorState
+from Config import Configuration
+from Kinematics import four_legs_inverse_kinematics
+from adafruit_servokit import ServoKit
+from HardwareInterface import HardwareInterface
 
-Ao iniciar, vai diretamente para o modo Normal (sleep) sem tela de seleção.
-O robô deita imediatamente com fêmures e tíbias se movendo juntos.
+use_imu = False
 
-Botões disponíveis durante operação:
-  [Botão Y]  → Toggle stand/sleep
-  [START]    → Sair
+config = Configuration()
+state = State()
+state.height = config.default_z_ref
+hardware_interface = HardwareInterface()
 
-Para entrar no Modo Config (calibração), edite a variável START_IN_CONFIG
-    abaixo ou inicie com argumento --config.
+joystick = JoystickInterface(config)
+last_loop = time.time()
 
-Para testes individuais de subsistemas, use os scripts em test/.
+# Create controller and user input handles
+controller = Controller(
+    config,
+    four_legs_inverse_kinematics,
+)
 
-Estrutura do projeto:
-  configs/robot_config.py         — constantes de hardware e marcha
-  core/servo_manager.py           — gerenciamento dos 12 servos
-  core/leg.py                     — cinemática de cada perna
-  motion/poses.py                 — transições de pose (stand, sleep)
-  motion/locomotion.py            — orquestração de threads de marcha
-  motion/stabilization.py        — estabilização roll/pitch via MPU6050
-  input/gamepad.py                — leitura de gamepad e máquina de estados
-  input/gamepad_calibration.py   — modo de calibração via gamepad
-"""
-
-
-import sys
-
-from adafruit_servokit import ServoKit  # type: ignore
-
-from configs.robot_config import LEG_CONFIG, SERVO_CHANNELS
-from core.leg import Leg
-from core.servo_manager import ServoManager
-from input.gamepad import GamepadReader, RobotController
-from input.gamepad_calibration import run_gamepad_calibration
-from motion import poses
+SMOOTH_N_STEPS: int   = 60     # passos da interpolação smooth_move
+SMOOTH_DELAY:   float = 0.02   # s — delay entre passos
 
 
-# ── Seleção de modo inicial (usada apenas após calibração) —————————————————
+hardware_interface.set_actuator_positions(config.neutral_angle)
 
-def _choose_mode(reader: GamepadReader) -> str:
-    """
-    Bloqueia até o usuário pressionar um botão na tela de seleção.
-    Usada apenas após uma sessão de calibração para decidir o próximo passo.
+def calcualte_default_angles():
+    state.foot_locations = (
+        config.default_stance
+        + np.array([0, 0, config.default_z_ref])[:, np.newaxis]
+    )
+    state.joint_angles = four_legs_inverse_kinematics(
+        state.foot_locations, config
+    )
+    return state.joint_angles
 
-    Retorna:
-      "normal"  — [X] pressionado
-      "config"  — [Y] pressionado
-      "exit"    — [START] pressionado
-    """
-    ecodes = reader._ecodes
+while True:
+    print("Waiting for L1 to activate robot. (Press A to lay/stand)")
+    while True:
+        command = joystick.get_command(state)
 
-    print("\n" + "═" * 56)
-    print("  Robot-Dog-Maua — Selecione o modo de operação:")
-    print("─" * 56)
-    print("  [X]     → Modo Normal   (controle de locomoção)")
-    print("  [Y]     → Modo Config   (calibração de servos)")
-    print("  [START] → Sair")
-    print("═" * 56)
 
-    btn_x     = getattr(ecodes, "BTN_WEST", 308)        # X
-    btn_y     = getattr(ecodes, "BTN_NORTH", 307)       # Y
-    btn_start = ecodes.BTN_START
+        # if command.L3_button:
+        #     if np.all(config.physical_calibration_offsets == 0):
+        #         config.physical_calibration_offsets = config.physical_calibration_offsets_oriented
+        #         hardware_interface.set_actuator_positions(hardware_interface.current_angles)
+        #     else:
+        #         config.physical_calibration_offsets = np.zeros((3, 4))
+        #         hardware_interface.set_actuator_positions(hardware_interface.current_angles)
 
-    for event in reader.events():
-        if event.type != ecodes.EV_KEY or event.value != 1:
+        if command.X_button:
+            if not state.is_calibration:
+                print("Calibração")
+                hardware_interface.smooth_transition(config.neutral_angle, n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                state.is_calibration = True
+                state.is_laying = False
+            else:
+                print("Levantando")
+                hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                state.is_calibration = False
+
+        if command.X_button:
+            if not state.is_calibration:
+                print("Calibração")
+                hardware_interface.smooth_transition(config.neutral_angle, n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                state.is_calibration = True
+                state.is_laying = False
+            else:
+                print("Levantando")
+                hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                state.is_calibration = False
+            
+        if command.A_button:
+            if not state.is_laying:
+                print("Deitando")
+                hardware_interface.smooth_transition(config.lay_angles, n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                state.is_laying = True
+                state.is_calibration = False
+            else:
+                print("Levantando")
+                hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                state.is_laying = False
+
+        if command.activate_event == 1:
+            if state.is_laying or state.is_calibration:
+                print("Robô estava deitado. Levantando antes de ativar...")
+                hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                state.is_laying = False
+                state.is_calibration = False
+
+
+
+            state.behavior_state = BehaviorState.REST
+            break
+        time.sleep(0.1)
+
+    
+    print("Robot activated.")
+    # config.physical_calibration_offsets = config.physical_calibration_offsets_oriented
+    last_loop = time.time()
+
+
+    while True:
+
+        #print(f"Roll: {state.roll:.2f} | Pitch: {state.pitch:.2f} | Yaw rate: {state.yaw_rate:.2f}")
+
+        now = time.time()
+        if now - last_loop < config.dt:
             continue
+        last_loop = time.time()
 
-        if event.code == btn_x:
-            print("\n  [X] Modo Normal selecionado.")
-            return "normal"
-
-        if event.code == btn_y:
-            print("\n  [Y] Modo de Calibração selecionado.")
-            return "config"
-
-        if event.code in reader.EXIT_BUTTONS or event.code == btn_start:
-            print("\n  [START] Encerrando...")
-            return "exit"
-
-    return "exit"
+        # Parse the udp joystick commands and then update the robot controller's parameters
+        command = joystick.get_command(state)
 
 
-# ── Ponto de entrada ─────────────────────────────────────────────────────────────
+        # Read imu data. Orientation will be None if no data was available
+        quat_orientation = np.array([1, 0, 0, 0])
+        # (
+        #     imu.read_orientation() if use_imu else np.array([1, 0, 0, 0])
+        # )
+        state.quat_orientation = quat_orientation
 
-def main() -> None:
-    # 1. Inicializa o controlador de servos (PCA9685, 16 canais, I2C)
-    kit = ServoKit(channels=16)
 
-    # 2. Cria o gerenciador de servos
-    #    (carrega calibração e restaura último estado automaticamente)
-    servo_mgr = ServoManager(kit, channels=SERVO_CHANNELS)
 
-    # 3. Instancia as 4 pernas com suas configurações individuais
-    legs: dict[str, Leg] = {
-        name: Leg(name, servo_mgr, cfg)
-        for name, cfg in LEG_CONFIG.items()
-    }
+        # Step the controller forward by dt
+        controller.run(state, command)
 
-    # 4. Conecta o gamepad (compartilhado entre os modos)
-    print("\nProcurando controle Gamesir...")
-    try:
-        reader = GamepadReader()
-    except (ImportError, RuntimeError) as exc:
-        print(f"Erro: {exc}")
-        return
+        if command.activate_event == 1:
+            print("Deactivating Robot")
+            hardware_interface.smooth_transition(state.joint_angles, n_steps=30, delay=0.04)
+ 
+            break
 
-    print(f"Controle conectado: {reader.name} ({reader.path})")
-    reader.grab()
-
-    try:
-        # Coloca o robô em modo sleep imediatamente antes de aguardar a seleção
-        poses.sleep_direct(servo_mgr)
+        # Atualizar posição dos servos
+        hardware_interface.set_actuator_positions(state.joint_angles) 
         
-        mode = _choose_mode(reader)
-
-        if mode == "config":
-            # 5a. Modo Calibração — calibra servos via gamepad
-            run_gamepad_calibration(servo_mgr, reader)
-            # Após calibrar, oferece ao usuário entrar no modo normal
-            print("\nCalibração concluída.")
-            mode = _choose_mode(reader)
-
-        if mode == "normal":
-            # 5b. Modo Normal — vai direto para sleep ao iniciar.
-            #     Fêmures e tíbias se movem juntos (sleep_direct).
-            print("\n" + "═" * 56)
-            print("  Robot-Dog-Maua — Iniciando em modo SLEEP")
-            print("─" * 56)
-            print("  [Botão Y] → Levantar / Deitar o robô")
-            print("  [START]   → Sair")
-            print("═" * 56)
-
-            poses.sleep_direct(servo_mgr)
-
-            # O reader já está com grab ativo; passa-o para o RobotController.
-            # Como o robô já foi colocado em sleep, o RobotController não
-            # chama poses.sleep() novamente ao entrar no loop.
-            controller = RobotController(servo_mgr, legs)
-            controller.run_with_reader(reader, skip_initial_sleep=True)
-
-    finally:
-        reader.ungrab()
-        print("Controle liberado. Encerrando.")
+        # print("    ")
+        # print("Raw Angles")
+        # print(np.matrix( state.joint_angles  ))
+        # print("Adjusted angels:")
+        # print(np.matrix( abs(config.servo_orientation_adjusts-state.joint_angles) ))
 
 
-if __name__ == "__main__":
-    main()

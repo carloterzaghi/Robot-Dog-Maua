@@ -29,8 +29,11 @@ class Controller:
 
         
         self.trot_transition_mapping = {BehaviorState.REST: BehaviorState.TROT, BehaviorState.TROT: BehaviorState.REST}
-        self.activate_transition_mapping = {BehaviorState.DEACTIVATED: BehaviorState.REST, BehaviorState.REST: BehaviorState.DEACTIVATED}
-
+        self.activate_transition_mapping = {
+            BehaviorState.DEACTIVATED: BehaviorState.REST,
+            BehaviorState.REST: BehaviorState.DEACTIVATED,
+            BehaviorState.TROT: BehaviorState.DEACTIVATED,  # Permite desativar mesmo se estiver trotando
+        }
 
     def step_gait(self, state, command):
         """Calculate the desired foot locations for the next timestep
@@ -141,6 +144,9 @@ class Controller:
         state.roll = command.roll
         state.height = command.height
 
+        if state.behavior_state == BehaviorState.DEACTIVATED:
+            self.set_pose_to_default(state)
+
     def set_pose_to_default(self, state):
         state.foot_locations = (
             self.config.default_stance
@@ -149,3 +155,9 @@ class Controller:
         state.joint_angles = self.inverse_kinematics(
             state.foot_locations, self.config
         )
+
+        state.roll = 0.0
+        state.pitch = 0.0
+        state.yaw_rate = 0.0
+        self.smoothed_yaw = 0.0
+        state.height = self.config.default_z_ref

@@ -9,9 +9,6 @@ def point_to_rad(p1, p2): # converts 2D cartesian points to polar angles in rang
     theta = (theta + 2*m.pi) % (2*m.pi)
     return theta
 
-def exibe_deg(ang, text, printa):
-    if(printa): print(f"\n{text} = {ang:.4f} rad -> {ang*180/m.pi:.4f} deg")
-
 def calculate_4_bar(th2 ,a,b,c,d):
     """Using 'Freudensteins method', it finds all the angles within a 4 bar linkage with vertices ABCD and known link lengths a,b,c,d
     defined clockwise from point A, and known angle, th2.
@@ -53,37 +50,6 @@ def calculate_4_bar(th2 ,a,b,c,d):
                     
     return ABC,BCD,CDA
 
-# def lower_leg_angle_to_servo_angle(config, THETA2, THETA3):
-#     ''' Converts the direct angles of the upper and lower leg joint from the inverse kinematics to the angle
-#     at the servo that drives the lower leg via a linkage. 
-#     Parameters
-#         ----------
-#     THETA2 : float
-#         angle of upper leg from the IK 
-#     THETA3 : float
-#         angle of lower leg from the IK 
-#     link: Leg_linage
-#         A linkage class with all link lengths and relevant angles stored. Link values are based off
-#         the physcial design of the link
-
-#     Returns
-#     -------
-#     THETA0: float
-#         The angle of the servo that drives the outside of the linkage
-#     '''
-
-#     # First 4 bar linkages
-#     GDE,DEF,EFG = calculate_4_bar(THETA3,config.i,config.h,config.f,config.g) #+ config.lower_leg_bend_angle
-#     # Triangle section
-#     CDH = 3/2*m.pi - THETA2 - GDE - config.EDC
-#     CDA = CDH +config.gamma #input angle
-#     # Second 4 bar linkage
-#     DAB,ABC,BCD = calculate_4_bar(CDA ,config.d,config.a,config.b,config.c)
-#     #Calculating Theta
-#     THETA0 = DAB + config.gamma
-
-#     return THETA0
-
 def RotMatrix3D(rotation=[0,0,0],is_radians=True, order='xyz'):
     
     roll, pitch, yaw = rotation[0], rotation[1], rotation[2]
@@ -111,54 +77,20 @@ def RotMatrix3D(rotation=[0,0,0],is_radians=True, order='xyz'):
 
 #-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/
 
-def impose_physical_limits(desired_joint_angles):
-    ''' Takes desired upper and lower leg angles and clips them to be within the range of physical possiblity. 
-    This is because some angles are not possible for the physical linkage. Processing is done in degrees.
-        ----------
-    desired_joint_angles : numpy array 3x4 of float angles (radians)
-        Desired angles of all joints for all legs from inverse kinematics
+def phisicalLimits(angles = [0,0,0]):
+    angles[0] = np.clip(angles[0], 60, 120)
+    
+    # Limita o upper
+    angles[1] = max(25.0, min(180.0, angles[1]))
 
-    Returns
-    -------
-    possble_joint_angles: numpy array 3x4 of float angles (radians)
-        The angles that will be attempted to be implemeneted, limited to a possible range
-    '''
-    possible_joint_angles = np.zeros((3,4))
+    # Calcula os limites do lower em função do upper
+    lower_min = max(42.0, angles[1] - 109.0)
+    lower_max = min(125.0, angles[1] + 20.0)
 
-    for i in range(4):
-        hip,upper,lower = np.degrees(desired_joint_angles[:,i])
+    # Limita o lower
+    angles[2] = max(lower_min, min(lower_max, angles[2]))
 
-        hip   = np.clip(hip,-20,20)
-        upper = np.clip(upper,5,180)
-
-        if      0    <=  upper <     10  :
-            lower = np.clip(lower, -20 , 40) 
-        elif 10    <=  upper <     20  :
-            lower = np.clip(lower, -40 , 40)
-        elif 20    <=  upper <     30  :
-            lower = np.clip(lower, -50 , 40) 
-        elif 30    <=  upper <     40  :
-            lower = np.clip(lower, -60 , 30) 
-        elif 40    <=  upper <     50  :
-            lower = np.clip(lower, -70 , 25)
-        elif 50    <=  upper <     60  :
-            lower = np.clip(lower, -70 , 20) 
-        elif 60    <=  upper <     70  :
-            lower = np.clip(lower, -70 , 0) 
-        elif 70    <=  upper <     80  :
-            lower = np.clip(lower, -70 , -10)
-        elif 80    <=  upper <     90  :
-            lower = np.clip(lower, -70 , -20) 
-        elif 90    <=  upper <     100  :
-            lower = np.clip(lower, -70 , -30) 
-        elif 100    <=  upper <     110  :
-            lower = np.clip(lower, -70 , -40)
-        elif 110    <=  upper <     120  :
-            lower = np.clip(lower, -70 , -60) 
-
-        possible_joint_angles[:,i] =  hip,upper,lower
-
-    return np.radians(possible_joint_angles)
+    return angles
 
 def angle_corrector(angles=[0,0,0]):
 
@@ -167,10 +99,19 @@ def angle_corrector(angles=[0,0,0]):
     angles[1] = angles[1] - m.pi/2 #theta2 offset
     
 
+    # for index, theta in enumerate(angles):
+    #     if theta > 2*m.pi: angles[index] = np.mod(theta,2*m.pi)
+    #     if theta > m.pi: angles[index] = -(2*m.pi - theta)
+
     for index, theta in enumerate(angles):
-        if theta > 2*m.pi: angles[index] = np.mod(theta,2*m.pi)
-        if theta > m.pi: angles[index] = -(2*m.pi - theta)
-    return angles
+        theta = np.mod(theta, 2*m.pi)
+
+        if theta > m.pi:
+            theta = 2*m.pi - theta
+
+        angles[index] = theta
+
+    return phisicalLimits(np.rad2deg(angles))
 
 def Calculate_IK(r_body_foot, leg_index, config):
     is_right = 0
@@ -258,8 +199,7 @@ def Calculate_IK(r_body_foot, leg_index, config):
     # print(f"theta_2 = {theta_2}")
     # print(f"theta_3 = {theta_3}")
 
-    unrevised_angles = [theta_1,theta_2,theta_3]
-    revised_angles = np.rad2deg(angle_corrector(unrevised_angles))
+    revised_angles = (angle_corrector([theta_1,theta_2,theta_3]))
 
 
     # print("revised angels:")
@@ -268,17 +208,6 @@ def Calculate_IK(r_body_foot, leg_index, config):
 
     return[revised_angles[0],revised_angles[1],revised_angles[2]]
 
-
-
-def phisicalLimits(angulos = [0,0,0]):
-    return
-
-def setLegPosition(foot_position=[0,0,0], config = None): #substituida por four_legs_inverse_kinematics
-    angulos = Calculate_IK(foot_position, config)
-    # modify angles to match robot's configuration (i.e., adding offsets)
-    angulos = angle_corrector(angulos)
-    ##angulos = phisicalLimits()
-    return [angulos[0], angulos[1], angulos[2]]
 
 def four_legs_inverse_kinematics(r_body_foot, config):
     """Find the joint angles for all twelve DOF correspoinding to the given matrix of body-relative foot positions.
@@ -298,31 +227,61 @@ def four_legs_inverse_kinematics(r_body_foot, config):
     alpha = np.zeros((3, 4))
     for i in range(4):
         body_offset = config.LEG_ORIGINS[:, i]
-        #print(np.matrix(r_body_foot[:, i] - body_offset))
         alpha[:, i] = Calculate_IK(
             r_body_foot[:, i] - body_offset, i, config
         )
-    #print(" ")
-    #print("Alpha:")
-    #print(np.matrix(alpha))
-    #print(" ")
+    alpha = abs(config.servo_orientation_adjusts - alpha) 
     return alpha
     
+
+
+# def lower_leg_angle_to_servo_angle(config, THETA2, THETA3):
+#     ''' Converts the direct angles of the upper and lower leg joint from the inverse kinematics to the angle
+#     at the servo that drives the lower leg via a linkage. 
+#     Parameters
+#         ----------
+#     THETA2 : float
+#         angle of upper leg from the IK 
+#     THETA3 : float
+#         angle of lower leg from the IK 
+#     link: Leg_linage
+#         A linkage class with all link lengths and relevant angles stored. Link values are based off
+#         the physcial design of the link
+
+#     Returns
+#     -------
+#     THETA0: float
+#         The angle of the servo that drives the outside of the linkage
+#     '''
+
+#     # First 4 bar linkages
+#     GDE,DEF,EFG = calculate_4_bar(THETA3,config.i,config.h,config.f,config.g) #+ config.lower_leg_bend_angle
+#     # Triangle section
+#     CDH = 3/2*m.pi - THETA2 - GDE - config.EDC
+#     CDA = CDH +config.gamma #input angle
+#     # Second 4 bar linkage
+#     DAB,ABC,BCD = calculate_4_bar(CDA ,config.d,config.a,config.b,config.c)
+#     #Calculating Theta
+#     THETA0 = DAB + config.gamma
+
+#     return THETA0
+
 #--------------------------------------------------------------< Comeco do Codigo >--------------------------------------------------------------#
 
-config = Configuration()
 
-foot_locations = (
-            config.default_stance
-            + np.array([0, 0, config.default_z_ref])[:, np.newaxis]
-)
+# config = Configuration()
+
+# foot_locations = (
+#             config.default_stance
+#             + np.array([0, 0, config.default_z_ref])[:, np.newaxis]
+# )
 
 
-joint_angles = four_legs_inverse_kinematics(
-            foot_locations, config
-        )
+# joint_angles = four_legs_inverse_kinematics(
+#             foot_locations, config
+#         )
 
-#print(np.matrix(np.rad2deg(joint_angles)))
+#print(np.matrix((joint_angles)))
 
 
 

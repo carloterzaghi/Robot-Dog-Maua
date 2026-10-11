@@ -1,9 +1,10 @@
 import numpy as np
 import math as m
 
-# TODO: put these somewhere else
-class PWMParams:
+
+class ServoParams:
     def __init__(self):
+
         # FR FL RR RL
         # ANGULAR
         # FEMUR
@@ -11,63 +12,42 @@ class PWMParams:
         self.pins = np.array([[1, 6, 14, 9], 
                               [2, 7, 13, 8], 
                               [0, 5, 15, 10]])
-        #self.range = 4000 acho q n precisa
-        #self.freq = 250 acho q n precisa
-
-
-class ServoParams:
-    def __init__(self):
-        #self.neutral_position_pwm = 1500  # Middle position
-        self.micros_per_rad = MICROS_PER_RAD  # Must be calibrated
-
-        # The neutral angle of the joint relative to the modeled zero-angle in degrees, for each joint
-        self.neutral_angle_degrees = np.array(
-            [[  90.,  90.,  90.,  90.],
-            [ 90., 90., 90., 90.],
-            [-90.,-90.,-90.,-90.]]
-        )
-
-        self.servo_multipliers = np.array(
-            [[1, 1, 1, 1], 
-             [-1, 1, -1, 1], 
-             [1, -1, 1, -1]]
-        )
-
-        # FR FL RR RL
-        # ANGULAR
-        # FEMUR
-        # TIBIA
-
-        self.servo_multipliers = np.array(
-            [[0, -180, 0, -180, ], 
-             [0, -180, 0, -180], 
-             [0, -180, 0, -180]]
-        )
-
-    # @property
-    # def neutral_angles(self):
-    #     return self.neutral_angle_degrees * np.pi / 180.0  # Convert to radians
-
+        
 
 class Configuration:
     def __init__(self):
 
-        # FR FL RR RL
-        # ANGULAR
-        # FEMUR
-        # TIBIA
-        self.pins = np.array([[1, 6, 14, 9], 
-                              [2, 7, 13, 8], 
-                              [0, 5, 15, 10]])
-        #self.range = 4000 acho q n precisa
-        #self.freq = 250 acho q n precisa
-
-
-        self.servo_multipliers = np.array(
-            [[0, -180, 0, -180, ], 
-             [0, -180, 0, -180], 
-             [0, -180, 0, -180]]
+        self.neutral_angle = np.array(
+            [[  90.,  90.,  90.,  90.],
+            [ 90., 90., 90., 90.],
+            [90.,90.,90.,90.]]
         )
+
+        self.servo_orientation_adjusts = np.array(
+            [[0, 180, 180,   0], 
+             [0, 180,   0, 180], 
+             [0, 180,   0, 180]])
+
+        self.physical_calibration_offsets_unoriented = np.array(
+            [[-5.5,    2,     4,   4],
+             [3.5, 1.5, -0.5, -1],
+             [0.83, 2.83,  4.83,    0]])
+
+        direction = np.where(self.servo_orientation_adjusts == 0, 1, -1)
+
+        self.physical_calibration_offsets_oriented = (
+            self.physical_calibration_offsets_unoriented * direction
+        )
+
+        self.physical_calibration_offsets = self.physical_calibration_offsets_oriented
+
+        # Pose de repouso / deitado / sentar (FR, FL, RR, RL)
+        self.lay_angles = abs(self.servo_orientation_adjusts - np.array(
+            [[ 90., 90., 90.,  90.],   # Angulares (FR, FL, RR, RL)
+             [ 41., 41.,  41., 41.],   # Fêmures
+             [ 58., 58.,  58., 58.]]   # Tíbias
+        ))
+
 
         #################### COMMANDS ####################
         self.max_x_velocity = 0.4
@@ -77,7 +57,7 @@ class Configuration:
         
         #################### MOVEMENT PARAMS ####################
         self.z_time_constant = 0.02
-        self.z_speed = 0.03  # maximum speed [m/s]
+        self.z_speed = 0.06  # maximum speed [m/s]
         self.pitch_deadband = 0.02
         self.pitch_time_constant = 0.25
         self.max_pitch_rate = 0.15
@@ -86,15 +66,20 @@ class Configuration:
         self.max_stance_yaw = 1.2
         self.max_stance_yaw_rate = 2.0
 
+        self.default_yaw_rate = 0.0
+        self.height = -0.20
+        self.default_pitch = 0.0
+        self.default_roll = 0.0
+
         #################### STANCE #################### posições de pé
         self.delta_x = 0.126 #posição X do pé em relação a origem do robo quando fica de pé
-        self.delta_y = 0.137 #posição Y do pé em relação a origem do robo quando fica de pé
+        self.delta_y = 0.137 #posição Y do pé em relação a origem do robo quando fica de pé 137
         self.x_shift = 0.0 
-        self.default_z_ref = -0.22 #ALTURA PADRÃO DO ROBO EM PÉ [m]
+        self.default_z_ref = self.height #ALTURA PADRÃO DO ROBO EM PÉ [m]
 
         #################### SWING ######################
         self.z_coeffs = None
-        self.z_clearance = 0.07 #ALTURA MAXIMA DE SWING DA PATA QUANDO EM MOVMENTO
+        self.z_clearance = 0.07 #ALTURA MAXIMA DE SWING DA PATA QUANDO EM MOVMENTO 0,07
         self.alpha = (
             0.5  # Ratio between touchdown distance and total horizontal stance movement
         )

@@ -20,5 +20,8 @@ class Command:
         # Eventos
         self.activate_event = False
         self.trot_event = False
+        self.A_button = False
+        self.X_button = False
+        self.L3_button = False
 
         
