@@ -1,0 +1,17 @@
+[Unit]
+Description=Robot Dog Maua - main.py
+After=multi-user.target bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__PROJECT__
+ExecStart=__PYTHON__ -u __WORKDIR__/main.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=__PROJECT__
+
+[Install]
+WantedBy=multi-user.target
