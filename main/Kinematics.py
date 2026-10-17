@@ -139,7 +139,14 @@ def Calculate_IK(r_body_foot, leg_index, config):
     # a_2 : angle bewtween len_A and leg's projection line on YZ plane
     # a_3 : angle between link1 and length len_A
     a_1 = point_to_rad(y,z)                     
-    a_2 = m.asin(m.sin(config.phi)*config.ABDUCTION_OFFSET/len_A)
+    #a_2 = m.asin(m.sin(config.phi)*config.ABDUCTION_OFFSET/len_A)
+    arg_a2 = (
+    m.sin(config.phi) *
+    config.ABDUCTION_OFFSET /
+    max(len_A, 1e-9)
+    )
+
+    a_2 = m.asin(np.clip(arg_a2, -1.0, 1.0))
     a_3 = m.pi - a_2 - config.phi               
 
     # angle of link1 about the x-axis 
@@ -231,6 +238,9 @@ def four_legs_inverse_kinematics(r_body_foot, config):
             r_body_foot[:, i] - body_offset, i, config
         )
     alpha = abs(config.servo_orientation_adjusts - alpha) 
+
+    #print(f"FR Height = {r_body_foot[2, 0]}")
+
     return alpha
     
 

@@ -24,8 +24,8 @@ class State:
 
         self.behavior_state = BehaviorState.DEACTIVATED
         self.is_sitting = False
-        self.is_laying = False
-        self.is_calibration = True
+        self.is_laying = True
+        self.is_calibration = False
 
 
 # class BehaviorState(Enum):

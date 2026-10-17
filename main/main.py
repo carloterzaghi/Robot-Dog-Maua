@@ -1,6 +1,7 @@
 import numpy as np
 import time
-#from IMU import IMU
+import math
+from IMU import IMU
 from Controller import Controller
 from JoystickInterface import JoystickInterface
 from State import State, BehaviorState
@@ -10,6 +11,9 @@ from adafruit_servokit import ServoKit
 from HardwareInterface import HardwareInterface
 
 use_imu = False
+imu = IMU() if use_imu else None
+
+
 
 config = Configuration()
 state = State()
@@ -18,6 +22,7 @@ hardware_interface = HardwareInterface()
 
 joystick = JoystickInterface(config)
 last_loop = time.time()
+
 
 # Create controller and user input handles
 controller = Controller(
@@ -29,7 +34,12 @@ SMOOTH_N_STEPS: int   = 60     # passos da interpolação smooth_move
 SMOOTH_DELAY:   float = 0.02   # s — delay entre passos
 
 
-hardware_interface.set_actuator_positions(config.neutral_angle)
+hardware_interface.set_actuator_positions(config.lay_angles)
+
+
+
+
+
 
 def calcualte_default_angles():
     state.foot_locations = (
@@ -41,110 +51,114 @@ def calcualte_default_angles():
     )
     return state.joint_angles
 
-while True:
-    print("Waiting for L1 to activate robot. (Press A to lay/stand)")
+if use_imu:
+    imu.calibrate(samples=300)
+
+try:
     while True:
-        command = joystick.get_command(state)
+        print("Waiting for L1 to activate robot. (Press A to lay/stand)")
+        while True:
+            command = joystick.get_command(state)
 
 
-        # if command.L3_button:
-        #     if np.all(config.physical_calibration_offsets == 0):
-        #         config.physical_calibration_offsets = config.physical_calibration_offsets_oriented
-        #         hardware_interface.set_actuator_positions(hardware_interface.current_angles)
-        #     else:
-        #         config.physical_calibration_offsets = np.zeros((3, 4))
-        #         hardware_interface.set_actuator_positions(hardware_interface.current_angles)
-
-        if command.X_button:
-            if not state.is_calibration:
-                print("Calibração")
-                hardware_interface.smooth_transition(config.neutral_angle, n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
-                state.is_calibration = True
-                state.is_laying = False
-            else:
-                print("Levantando")
-                hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
-                state.is_calibration = False
-
-        if command.X_button:
-            if not state.is_calibration:
-                print("Calibração")
-                hardware_interface.smooth_transition(config.neutral_angle, n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
-                state.is_calibration = True
-                state.is_laying = False
-            else:
-                print("Levantando")
-                hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
-                state.is_calibration = False
-            
-        if command.A_button:
-            if not state.is_laying:
-                print("Deitando")
-                hardware_interface.smooth_transition(config.lay_angles, n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
-                state.is_laying = True
-                state.is_calibration = False
-            else:
-                print("Levantando")
-                hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
-                state.is_laying = False
-
-        if command.activate_event == 1:
-            if state.is_laying or state.is_calibration:
-                print("Robô estava deitado. Levantando antes de ativar...")
-                hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
-                state.is_laying = False
-                state.is_calibration = False
+            # if command.L3_button:
+            #     if np.all(config.physical_calibration_offsets == 0):
+            #         config.physical_calibration_offsets = config.physical_calibration_offsets_oriented
+            #         hardware_interface.set_actuator_positions(hardware_interface.current_angles)
+            #     else:
+            #         config.physical_calibration_offsets = np.zeros((3, 4))
+            #         hardware_interface.set_actuator_positions(hardware_interface.current_angles)
 
 
 
-            state.behavior_state = BehaviorState.REST
-            break
-        time.sleep(0.1)
+            if command.X_button:
+                if not state.is_calibration:
+                    print("Calibração")
+                    hardware_interface.smooth_transition(config.neutral_angle, n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                    state.is_calibration = True
+                    state.is_laying = False
+                else:
+                    print("Levantando")
+                    hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                    state.is_calibration = False
+                
+            if command.A_button:
+                if not state.is_laying:
+                    print("Deitando")
+                    hardware_interface.smooth_transition(config.lay_angles, n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                    state.is_laying = True
+                    state.is_calibration = False
+                else:
+                    print("Levantando")
+                    hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                    state.is_laying = False
 
-    
-    print("Robot activated.")
-    # config.physical_calibration_offsets = config.physical_calibration_offsets_oriented
-    last_loop = time.time()
+            if command.activate_event == 1:
+                if state.is_laying or state.is_calibration:
+                    print("Robô estava deitado. Levantando antes de ativar...")
+                    hardware_interface.smooth_transition(calcualte_default_angles(), n_steps=SMOOTH_N_STEPS, delay=SMOOTH_DELAY)
+                    state.is_laying = False
+                    state.is_calibration = False
 
 
-    while True:
 
-        #print(f"Roll: {state.roll:.2f} | Pitch: {state.pitch:.2f} | Yaw rate: {state.yaw_rate:.2f}")
+                state.behavior_state = BehaviorState.REST
+                break
+            time.sleep(0.1)
 
-        now = time.time()
-        if now - last_loop < config.dt:
-            continue
+        
+        print("Robot activated.")
+        # config.physical_calibration_offsets = config.physical_calibration_offsets_oriented
         last_loop = time.time()
 
-        # Parse the udp joystick commands and then update the robot controller's parameters
-        command = joystick.get_command(state)
+
+        while True:
+
+            #print(f"Roll: {state.roll:.2f} | Pitch: {state.pitch:.2f} | Yaw rate: {state.yaw_rate:.2f}")
+
+            now = time.time()
+            if now - last_loop < config.dt:
+                continue
+            last_loop = time.time()
+
+            # Parse the udp joystick commands and then update the robot controller's parameters
+            command = joystick.get_command(state)
 
 
-        # Read imu data. Orientation will be None if no data was available
-        quat_orientation = np.array([1, 0, 0, 0])
-        # (
-        #     imu.read_orientation() if use_imu else np.array([1, 0, 0, 0])
-        # )
-        state.quat_orientation = quat_orientation
+            # Read imu data. Orientation will be None if no data was available
+            quat_orientation = (
+                imu.read_orientation()
+                if use_imu
+                else np.array([1, 0, 0, 0])
+            )
+
+            state.quat_orientation = quat_orientation
 
 
 
-        # Step the controller forward by dt
-        controller.run(state, command)
+            # Step the controller forward by dt
+            controller.run(state, command)
 
-        if command.activate_event == 1:
-            print("Deactivating Robot")
-            hardware_interface.smooth_transition(state.joint_angles, n_steps=30, delay=0.04)
- 
-            break
+            if command.activate_event == 1:
+                print("Deactivating Robot")
+                hardware_interface.smooth_transition(state.joint_angles, n_steps=30, delay=0.04)
+    
+                break
 
-        # Atualizar posição dos servos
-        hardware_interface.set_actuator_positions(state.joint_angles) 
-        
-        # print("    ")
-        # print("Raw Angles")
-        # print(np.matrix( state.joint_angles  ))
-        # print("Adjusted angels:")
-        # print(np.matrix( abs(config.servo_orientation_adjusts-state.joint_angles) ))
+            # Atualizar posição dos servos
+            hardware_interface.set_actuator_positions(state.joint_angles) 
+            
+            # print("    ")
+            # print("Raw Angles")
+            # print(np.matrix( state.joint_angles  ))
+            # print("Adjusted angels:")
+            # print(np.matrix( abs(config.servo_orientation_adjusts-state.joint_angles) ))
 
+except KeyboardInterrupt:
+    print("Programa interrompido.")
 
+finally:
+    if imu is not None:
+        imu.close()
+
+    print("IMU encerrada.")

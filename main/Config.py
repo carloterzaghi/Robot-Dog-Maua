@@ -29,8 +29,8 @@ class Configuration:
              [0, 180,   0, 180]])
 
         self.physical_calibration_offsets_unoriented = np.array(
-            [[-5.5,    2,     4,   4],
-             [3.5, 1.5, -0.5, -1],
+            [[-5.5,    2,     6,   4],
+             [1, 1.5, -1, -1],
              [0.83, 2.83,  4.83,    0]])
 
         direction = np.where(self.servo_orientation_adjusts == 0, 1, -1)
@@ -79,7 +79,7 @@ class Configuration:
 
         #################### SWING ######################
         self.z_coeffs = None
-        self.z_clearance = 0.07 #ALTURA MAXIMA DE SWING DA PATA QUANDO EM MOVMENTO 0,07
+        self.z_clearance = 0.12 #ALTURA MAXIMA DE SWING DA PATA QUANDO EM MOVMENTO 0,07
         self.alpha = (
             0.5  # Ratio between touchdown distance and total horizontal stance movement
         )
