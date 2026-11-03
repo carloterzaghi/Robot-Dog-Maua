@@ -1,63 +1,88 @@
+"""Direct hardware interface module for the Adafruit PCA9685 PWM driver.
+
+Handles the transmission of PWM signals to the 12 servomotors, applies
+mechanical calibration zero offsets, and computes smooth dynamic transitions
+using a 5th-order Hermite polynomial (Smootherstep).
+"""
+
+from __future__ import annotations
 import time
-from Config import ServoParams
-from adafruit_servokit import ServoKit
-from Config import Configuration
+from typing import TYPE_CHECKING
 import numpy as np
+from numpy.typing import NDArray
+from adafruit_servokit import ServoKit
+
+from Config import Configuration, ServoParams
 
 config = Configuration()
 
+
 class HardwareInterface:
-    def __init__(self):
+    """Low-level controller for PCA9685 I2C communication and PWM actuation."""
+
+    def __init__(self) -> None:
+        """Initializes the I2C connection to the PCA9685 and configures 16-channel PWM limits."""
         self.kit = ServoKit(channels=16)
         self.servo_params = ServoParams()
-        self.current_angles = np.zeros((3, 4))
+        self.current_angles: NDArray[np.float64] = np.zeros((3, 4))
         self.initialize_servo()
 
-    def initialize_servo(self):
+    def initialize_servo(self) -> None:
+        """Configures 180° actuation range and pulse width limits (440 to 2560 µs) on all channels."""
         for i in range(16):
             self.kit.servo[i].actuation_range = 180
             self.kit.servo[i].set_pulse_width_range(440, 2560)
-            
-    def set_actuator_positions(self, joint_angles, use_servo_calibration = True):
-        """
-        Envia os ângulos da matriz 3x4 para os servos correspondentes.
+
+    def set_actuator_positions(
+        self, 
+        joint_angles: NDArray[np.float64], 
+        use_servo_calibration: bool = True
+    ) -> None:
+        """Sends computed joint angles from a 3x4 matrix to the respective servos via I2C.
 
         Args:
-            joint_angles : np.ndarray (3, 4) — ângulos em GRAUS
-                        linhas → articulação (0=angular, 1=fêmur, 2=tíbia)
-                        colunas → perna      (0=FR, 1=FL, 2=RR, 3=RL)
-            pins         : np.ndarray (3, 4) — canal PCA9685 de cada servo
-                        mesma organização de linhas/colunas
-            kit          : ServoKit — instância do adafruit_servokit
+            joint_angles: A (3, 4) matrix of target angles in degrees [°].
+                - Rows: [0]=Abduction, [1]=Femur, [2]=Tibia.
+                - Columns: [0]=FR, [1]=FL, [2]=RR, [3]=RL.
+            use_servo_calibration: If True, subtracts mechanical assembly offsets
+                defined in `config.physical_calibration_offsets`.
         """
+        self.current_angles = np.copy(joint_angles)
 
-        # print(" ")
-        # print("Definindo angulos:")
-        # print(np.matrix((joint_angles)))
-        self.current_angles = np.copy(joint_angles)        
-
-        for row in range(3):          # articulação
-            for col in range(4):      # perna
+        for row in range(3):          # Joint (0=Abduction, 1=Femur, 2=Tibia)
+            for col in range(4):      # Leg (0=FR, 1=FL, 2=RR, 3=RL)
                 canal = int(self.servo_params.pins[row, col])
                 if use_servo_calibration:
-                    angulo_deg = (joint_angles[row, col] - config.physical_calibration_offsets[row, col])
+                    angle_deg = joint_angles[row, col] - config.physical_calibration_offsets[row, col]
                 else:
-                    angulo_deg = joint_angles[row, col]
-                angulo_deg = float(np.clip(angulo_deg, 0.0, 180.0))
-                self.kit.servo[canal].angle = angulo_deg
+                    angle_deg = joint_angles[row, col]
 
-        
+                # Constrain the electrical command strictly within [0°, 180°]
+                angle_deg = float(np.clip(angle_deg, 0.0, 180.0))
+                self.kit.servo[canal].angle = angle_deg
 
-    def smooth_transition(self, target_angles, n_steps=25, delay=0.02):
+    def smooth_transition(
+        self, 
+        target_angles: NDArray[np.float64], 
+        n_steps: int = 25, 
+        delay: float = 0.02
+    ) -> None:
+        """Executes a smooth transition from current posture to target posture.
+
+        Uses the 5th-order Hermite polynomial (Smootherstep):
+        s(t) = 6t^5 - 15t^4 + 10t^3, ensuring zero velocity and acceleration
+        at the start and end points, preventing mechanical shock and servo chatter.
+
+        Args:
+            target_angles: A (3, 4) matrix of target angles in degrees [°].
+            n_steps: Number of intermediate interpolation steps.
+            delay: Wait time in seconds between successive steps.
         """
-        Transição suave da posição atual para a posição alvo 
-        """
-
         start_angles = np.copy(self.current_angles)
         for step in range(1, n_steps + 1):
             t = step / n_steps
+            # 5th-order Hermite polynomial (C² continuous)
             t_smooth = t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
             interpolated = start_angles + (target_angles - start_angles) * t_smooth
             self.set_actuator_positions(interpolated)
             time.sleep(delay)
-

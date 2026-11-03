@@ -1,6 +1,8 @@
-﻿# 🐾 Robot-Dog-Maua — Robô Quadrúpede
+# 🐾 Robot-Dog-Maua — Historical / Legacy Version
 
-Robô cão quadrúpede desenvolvido no **Instituto Mauá de Tecnologia**, controlado por **Raspberry Pi 4**, com 12 servos, cinemática inversa e controle via gamepad.
+> ⚠️ **VERSION NOTICE:** This directory (\legacy_main/\) contains the **previous historical implementation** of the quadruped robot, preserved for hardware test reference and past iteration logs.
+>
+> **The current, active, and recommended version is located in [../main/](../main/) and fully documented in the [Root README.md](../README.md).**
 
 ---
 

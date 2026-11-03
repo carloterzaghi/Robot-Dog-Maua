@@ -1,235 +1,263 @@
-import numpy as np
-from numpy.linalg import inv, norm
+"""3D Analytical Inverse Kinematics and Geometric Leg Transformations.
+
+Computes 3D analytical inverse kinematics (IK) for 4 legs with 3 degrees of
+freedom each (Abduction, Femur, Tibia), handling anatomical offsets, physical
+angular limits, and servo axis orientation masks.
+"""
+
+from __future__ import annotations
 import math as m
+from typing import Sequence, Tuple, Union
+import numpy as np
+from numpy.linalg import norm
+from numpy.typing import NDArray
+
 from Config import Configuration
-from time import sleep
 
-def point_to_rad(p1, p2): # converts 2D cartesian points to polar angles in range 0 - 2pi
-    theta = m.atan2(p2, p1)
-    theta = (theta + 2*m.pi) % (2*m.pi)
-    return theta
 
-def calculate_4_bar(th2 ,a,b,c,d):
-    """Using 'Freudensteins method', it finds all the angles within a 4 bar linkage with vertices ABCD and known link lengths a,b,c,d
-    defined clockwise from point A, and known angle, th2.
+def point_to_rad(p1: float, p2: float) -> float:
+    """Converts a 2D Cartesian coordinate (x, y) into a continuous polar angle in [0, 2π).
 
-    Parameters
-    ----------
-    th2 : float
-        the input angle at the actuating joint of the 4 bar linkage, aka angle DAB
-    a,b,c,d: floats
-        link lengths, defined in a clockwise manner from point A.
-    
-    Returns
-    -------
-    ABC,BCD,CDA: floats
-        The remaining angles in the 4 bar linkage
-    
+    Args:
+        p1: Horizontal coordinate.
+        p2: Vertical coordinate.
+
+    Returns:
+        Polar angle in radians [rad].
     """
-    #print('th2: ',m.degrees(th2),'a: ',a,'b: ',b,'c: ',c,'d: ',d)    
-    x_b = a*np.cos(th2)
-    y_b = a*np.sin(th2)
-    
-    #define diagnonal f
-    f = np.sqrt((d-x_b)**2 +y_b**2)
-    beta = np.arccos((f**2+c**2-b**2)/(2*f*c))
-    gamma = np.arctan2(y_b,d-x_b)
-    
-    th4 = np.pi - gamma - beta
-    
-    x_c = c*np.cos(th4)+d
-    y_c = c*np.sin(th4)
-    
-    th3 = np.arctan2((y_c-y_b),(x_c-x_b))
-    
-    
-    ## Calculate remaining internal angles of linkage
-    ABC = np.pi-th2 + th3
-    BCD  = th4-th3
-    CDA = np.pi*2 - th2 - ABC - BCD
-                    
-    return ABC,BCD,CDA
+    theta = m.atan2(p2, p1)
+    return float((theta + 2 * m.pi) % (2 * m.pi))
 
-def RotMatrix3D(rotation=[0,0,0],is_radians=True, order='xyz'):
-    
+
+def calculate_4_bar(
+    th2: float, 
+    a: float, 
+    b: float, 
+    c: float, 
+    d: float
+) -> Tuple[float, float, float]:
+    """Finds internal angles of a four-bar linkage (Freudenstein's method).
+
+    Used for closed pantographic linkage kinematics.
+
+    Args:
+        th2: Actuating joint input angle DAB [rad].
+        a, b, c, d: Link lengths defined clockwise from point A.
+
+    Returns:
+        Tuple of remaining internal angles: (ABC, BCD, CDA) in radians.
+    """
+    x_b = a * np.cos(th2)
+    y_b = a * np.sin(th2)
+
+    # Intermediate diagonal f
+    f = np.sqrt((d - x_b) ** 2 + y_b ** 2)
+    beta = np.arccos((f ** 2 + c ** 2 - b ** 2) / (2 * f * c))
+    gamma = np.arctan2(y_b, d - x_b)
+
+    th4 = np.pi - gamma - beta
+
+    x_c = c * np.cos(th4) + d
+    y_c = c * np.sin(th4)
+
+    th3 = np.arctan2((y_c - y_b), (x_c - x_b))
+
+    abc = np.pi - th2 + th3
+    bcd = th4 - th3
+    cda = np.pi * 2 - th2 - abc - bcd
+
+    return float(abc), float(bcd), float(cda)
+
+
+def RotMatrix3D(
+    rotation: Sequence[float] = (0.0, 0.0, 0.0), 
+    is_radians: bool = True, 
+    order: str = 'xyz'
+) -> np.matrix:
+    """Generates a 3D rotation matrix from Euler angles (Roll, Pitch, Yaw).
+
+    Args:
+        rotation: Sequence of (roll, pitch, yaw).
+        is_radians: If True, angles are in radians; if False, converts from degrees.
+        order: Intrinsic rotation order (default: 'xyz').
+
+    Returns:
+        3x3 rotation matrix (np.matrix).
+    """
     roll, pitch, yaw = rotation[0], rotation[1], rotation[2]
 
-    # convert to radians is the input is in degrees
-    if not is_radians: 
+    if not is_radians:
         roll = m.radians(roll)
         pitch = m.radians(pitch)
         yaw = m.radians(yaw)
-    
-    # rotation matrix about each axis
-    rotX = np.matrix([[1, 0, 0], [0, m.cos(roll), -m.sin(roll)], [0, m.sin(roll), m.cos(roll)]])
-    rotY = np.matrix([[m.cos(pitch), 0, m.sin(pitch)], [0, 1, 0], [-m.sin(pitch), 0, m.cos(pitch)]])
-    rotZ = np.matrix([[m.cos(yaw), -m.sin(yaw), 0], [m.sin(yaw), m.cos(yaw), 0], [0, 0, 1]])
-    
-    # rotation matrix order (default: pitch -> roll -> yaw)
-    if order == 'xyz': rotationMatrix = rotZ * rotY * rotX
-    elif order == 'xzy': rotationMatrix = rotY * rotZ * rotX
-    elif order == 'yxz': rotationMatrix = rotZ * rotX * rotY
-    elif order == 'yzx': rotationMatrix = rotX * rotZ * rotY
-    elif order == 'zxy': rotationMatrix = rotY * rotX * rotZ
-    elif order == 'zyx': rotationMatrix = rotX * rotY * rotZ
-    
-    return rotationMatrix # roll pitch and yaw rotation 
 
-#-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/
+    rot_x = np.matrix([
+        [1, 0, 0], 
+        [0, m.cos(roll), -m.sin(roll)], 
+        [0, m.sin(roll), m.cos(roll)]
+    ])
+    rot_y = np.matrix([
+        [m.cos(pitch), 0, m.sin(pitch)], 
+        [0, 1, 0], 
+        [-m.sin(pitch), 0, m.cos(pitch)]
+    ])
+    rot_z = np.matrix([
+        [m.cos(yaw), -m.sin(yaw), 0], 
+        [m.sin(yaw), m.cos(yaw), 0], 
+        [0, 0, 1]
+    ])
 
-def phisicalLimits(angles = [0,0,0]):
-    angles[0] = np.clip(angles[0], 60, 120)
-    
-    # Limita o upper
-    angles[1] = max(25.0, min(180.0, angles[1]))
+    if order == 'xyz':
+        return rot_z * rot_y * rot_x
+    elif order == 'xzy':
+        return rot_y * rot_z * rot_x
+    elif order == 'yxz':
+        return rot_z * rot_x * rot_y
+    elif order == 'yzx':
+        return rot_x * rot_z * rot_y
+    elif order == 'zxy':
+        return rot_y * rot_x * rot_z
+    elif order == 'zyx':
+        return rot_x * rot_y * rot_z
 
-    # Calcula os limites do lower em função do upper
-    lower_min = max(42.0, angles[1] - 109.0)
-    lower_max = min(125.0, angles[1] + 20.0)
+    return rot_z * rot_y * rot_x
 
-    # Limita o lower
-    angles[2] = max(lower_min, min(lower_max, angles[2]))
 
-    return angles
+def apply_physical_limits(angles: Union[Sequence[float], NDArray[np.float64]]) -> list[float]:
+    """Applies mechanical and anti-collision limits to leg joint angles.
 
-def angle_corrector(angles=[0,0,0]):
+    Args:
+        angles: List or array of [theta_abduction, theta_femur, theta_tibia] in degrees [°].
 
-    angles[0] = 2*m.pi - angles[0] + m.pi/2
-    angles[2] = angles[1] + angles[2] - 5/4*m.pi #theta3 offset
-    angles[1] = angles[1] - m.pi/2 #theta2 offset
-    
+    Returns:
+        List of three bounded angles within safe physical ranges.
+    """
+    result = [float(angles[0]), float(angles[1]), float(angles[2])]
 
-    # for index, theta in enumerate(angles):
-    #     if theta > 2*m.pi: angles[index] = np.mod(theta,2*m.pi)
-    #     if theta > m.pi: angles[index] = -(2*m.pi - theta)
+    # Hard limits for abduction
+    result[0] = float(np.clip(result[0], 60.0, 120.0))
 
-    for index, theta in enumerate(angles):
-        theta = np.mod(theta, 2*m.pi)
+    # Limits for femur
+    result[1] = max(25.0, min(180.0, result[1]))
 
+    # Dynamic limits for tibia as a function of femur position to prevent chassis strike
+    lower_min = max(42.0, result[1] - 109.0)
+    lower_max = min(125.0, result[1] + 20.0)
+    result[2] = max(lower_min, min(lower_max, result[2]))
+
+    return result
+
+
+# Backward-compatible alias
+phisicalLimits = apply_physical_limits
+
+
+def angle_corrector(angles: Sequence[float]) -> list[float]:
+    """Corrects servo phase angles, wraps to [0, 2π), and applies physical bounds.
+
+    Args:
+        angles: [theta_1, theta_2, theta_3] in radians.
+
+    Returns:
+        Angles converted to degrees and clamped within physical safety limits.
+    """
+    corrected = [0.0, 0.0, 0.0]
+    corrected[0] = 2 * m.pi - angles[0] + m.pi / 2
+    corrected[2] = angles[1] + angles[2] - 5 / 4 * m.pi  # Offset theta_3
+    corrected[1] = angles[1] - m.pi / 2                  # Offset theta_2
+
+    for index, theta in enumerate(corrected):
+        theta = np.mod(theta, 2 * m.pi)
         if theta > m.pi:
-            theta = 2*m.pi - theta
+            theta = 2 * m.pi - theta
+        corrected[index] = theta
 
-        angles[index] = theta
+    return apply_physical_limits(np.rad2deg(corrected))
 
-    return phisicalLimits(np.rad2deg(angles))
 
-def Calculate_IK(r_body_foot, leg_index, config):
-    is_right = 0
+def Calculate_IK(
+    r_body_foot: NDArray[np.float64], 
+    leg_index: int, 
+    config: Configuration
+) -> list[float]:
+    """Computes 3D analytical inverse kinematics for a single leg.
 
-    x=r_body_foot[0]
-    y=r_body_foot[1]
-    z=r_body_foot[2]
+    Args:
+        r_body_foot: 3D vector [x, y, z] of desired foot location relative to leg base [m].
+        leg_index: Leg index (0=FR, 1=FL, 2=RR, 3=RL).
+        config: Robot configuration object.
 
-    if leg_index == 0 or leg_index == 2:
-        
-        is_right = 1
+    Returns:
+        List containing [theta_abduction, theta_femur, theta_tibia] in degrees [°].
+    """
+    x = float(r_body_foot[0])
+    y = float(r_body_foot[1])
+    z = float(r_body_foot[2])
 
-    if is_right: 
+    # Symmetry mirroring for right-side legs (FR=0, RR=2)
+    is_right = leg_index in (0, 2)
+    if is_right:
         y = -y
 
-    # print(f"x = {x:.4f}")
-    # print(f"y = {y:.4f}")
-    # print(f"z = {z}")
+    # 1. Abduction angle (Projection on frontal YZ plane)
+    len_a = norm([0, y, z])
+    a_1 = point_to_rad(y, z)
 
-    r_body_foot = np.array([x,y,z])
+    arg_a2 = m.sin(config.phi) * config.ABDUCTION_OFFSET / max(len_a, 1e-9)
+    a_2 = m.asin(float(np.clip(arg_a2, -1.0, 1.0)))
+    a_3 = m.pi - a_2 - config.phi
 
-    # length of vector projected on the YZ plane. equiv. to len_A = sqrt(y**2 + z**2)
-    len_A = norm([0,y,z])   
-    # a_1 : angle from the positive y-axis to the end-effector (0 <= a_1 < 2pi)
-    # a_2 : angle bewtween len_A and leg's projection line on YZ plane
-    # a_3 : angle between link1 and length len_A
-    a_1 = point_to_rad(y,z)                     
-    #a_2 = m.asin(m.sin(config.phi)*config.ABDUCTION_OFFSET/len_A)
-    arg_a2 = (
-    m.sin(config.phi) *
-    config.ABDUCTION_OFFSET /
-    max(len_A, 1e-9)
-    )
+    theta_1 = (a_1 + a_3) % (2 * m.pi)
 
-    a_2 = m.asin(np.clip(arg_a2, -1.0, 1.0))
-    a_3 = m.pi - a_2 - config.phi               
+    # 2. Transformation to rotated 2D leg plane
+    offset = np.array([
+        0.0, 
+        config.ABDUCTION_OFFSET * m.cos(theta_1), 
+        config.ABDUCTION_OFFSET * m.sin(theta_1)
+    ])
+    translated_frame = np.array([x, y, z]) - offset
+    r2 = theta_1 + config.phi - m.pi / 2
 
-    # angle of link1 about the x-axis 
-    if is_right: theta_1 = (a_1 + a_3)
-    else: 
-        theta_1 = a_1 + a_3
-    if theta_1 >= 2*m.pi: theta_1 = np.mod(theta_1,2*m.pi)
+    rot_mtx = RotMatrix3D([-r2, 0, 0], is_radians=True)
+    j4_2_vec = np.ravel(rot_mtx * (np.reshape(translated_frame, [3, 1])))
 
-    #Translate frame to the frame of the leg
-    offset = np.array([0.0,config.ABDUCTION_OFFSET*m.cos(theta_1),config.ABDUCTION_OFFSET*m.sin(theta_1)])
-    translated_frame = r_body_foot - offset
+    x_, _, z_ = j4_2_vec[0], j4_2_vec[1], j4_2_vec[2]
+    len_b = float(norm([x_, 0, z_]))
 
-    R2 = theta_1 + config.phi - m.pi/2
+    # Clamp extension to prevent singularity
+    if len_b >= 0.245:
+        len_b = 0.245
 
-    # create rotation matrix to work on a new 2D plane (XZ_)
-    rot_mtx = RotMatrix3D([-R2,0,0],is_radians=True)
-    j4_2_vec_ = rot_mtx * (np.reshape(translated_frame,[3,1]))
-    j4_2_vec_ = np.ravel(j4_2_vec_)
+    # 3. Law of Cosines for Femur and Tibia
+    b_1 = point_to_rad(x_, z_)
 
-    # xyz in the rotated coordinate system + offset due to link_1 removed
-    x_, y_, z_ = j4_2_vec_[0], j4_2_vec_[1], j4_2_vec_[2]
-    
-    len_B = norm([x_, 0, z_])
+    arg_b2 = (config.LEG_L2 ** 2 + len_b ** 2 - config.LEG_L1 ** 2) / (2 * config.LEG_L2 * len_b)
+    b_2 = m.acos(float(np.clip(arg_b2, -1.0, 1.0)))
 
-    if len_B >= (0.245): 
-        len_B = (0.245)
-        #rospy.logwarn('target coordinate: [%f %f %f] too far away', x, y, z)
-
-    # Após o clamp superior (linha 226), adicionar:
-    # if len_B < abs(config.LEG_L1 - config.LEG_L2):
-    #     len_B = abs(config.LEG_L1 - config.LEG_L2)
-
-    # b_1 : angle between +ve x-axis and len_B (0 <= b_1 < 2pi)
-    # b_2 : angle between len_B and link_2
-    # b_3 : angle between link_2 and link_3
-    b_1 = point_to_rad(x_, z_)  
-    # b_2 = m.acos((config.LEG_L2**2 + len_B**2 - config.LEG_L1**2) / (2 * config.LEG_L2 * len_B)) 
-    # b_3 = m.acos((config.LEG_L2**2 + config.LEG_L1**2 - len_B**2) / (2 * config.LEG_L2 * config.LEG_L1))  
-
-    # Depois (linhas 233-234) — clamp para evitar math domain error
-    
-    arg_b2 = (config.LEG_L2**2 + len_B**2 - config.LEG_L1**2) / (2 * config.LEG_L2 * len_B)
-    b_2 = m.acos(max(-1.0, min(1.0, arg_b2)))
-
-    arg_b3 = (config.LEG_L2**2 + config.LEG_L1**2 - len_B**2) / (2 * config.LEG_L2 * config.LEG_L1)
-    b_3 = m.acos(max(-1.0, min(1.0, arg_b3)))
-
-
-    # print(f"b_1 = {b_1}")
-    # print(f"b_2 = {b_2}")
-    # print(f"b_3 = {b_3}")
+    arg_b3 = (config.LEG_L2 ** 2 + config.LEG_L1 ** 2 - len_b ** 2) / (2 * config.LEG_L2 * config.LEG_L1)
+    b_3 = m.acos(float(np.clip(arg_b3, -1.0, 1.0)))
 
     theta_2 = b_1 - b_2
     theta_3 = m.pi - b_3
 
-    # print(f"theta_1 = {theta_1}")
-    # print(f"theta_2 = {theta_2}")
-    # print(f"theta_3 = {theta_3}")
-
-    revised_angles = (angle_corrector([theta_1,theta_2,theta_3]))
+    # 4. Phase correction and mechanical limits
+    revised = angle_corrector([theta_1, theta_2, theta_3])
+    return [revised[0], revised[1], revised[2]]
 
 
-    # print("revised angels:")
+def four_legs_inverse_kinematics(
+    r_body_foot: NDArray[np.float64], 
+    config: Configuration
+) -> NDArray[np.float64]:
+    """Finds joint angles for all 12 DOF corresponding to the body-relative foot matrix.
 
-    # print(np.matrix(revised_angles))
+    Args:
+        r_body_foot: A (3, 4) matrix of body-frame foot coordinates [x, y, z] in meters.
+            Each column corresponds to a leg: [0]=FR, [1]=FL, [2]=RR, [3]=RL.
+        config: Robot configuration object.
 
-    return[revised_angles[0],revised_angles[1],revised_angles[2]]
-
-
-def four_legs_inverse_kinematics(r_body_foot, config):
-    """Find the joint angles for all twelve DOF correspoinding to the given matrix of body-relative foot positions.
-    
-    Parameters
-    ----------
-    r_body_foot : numpy array (3,4)
-        Matrix of the body-frame foot positions. Each column corresponds to a separate foot.
-    config : Config object
-        Object of robot configuration parameters.
-    
-    Returns
-    -------
-    numpy array (3,4)
-        Matrix of corresponding joint angles.
+    Returns:
+        A (3, 4) matrix of joint angles in degrees [°].
     """
     alpha = np.zeros((3, 4))
     for i in range(4):
@@ -237,87 +265,16 @@ def four_legs_inverse_kinematics(r_body_foot, config):
         alpha[:, i] = Calculate_IK(
             r_body_foot[:, i] - body_offset, i, config
         )
-    alpha = abs(config.servo_orientation_adjusts - alpha) 
 
-    #print(f"FR Height = {r_body_foot[2, 0]}")
-
+    # Apply physical servo orientation mask
+    alpha = abs(config.servo_orientation_adjusts - alpha)
     return alpha
-    
 
 
-# def lower_leg_angle_to_servo_angle(config, THETA2, THETA3):
-#     ''' Converts the direct angles of the upper and lower leg joint from the inverse kinematics to the angle
-#     at the servo that drives the lower leg via a linkage. 
-#     Parameters
-#         ----------
-#     THETA2 : float
-#         angle of upper leg from the IK 
-#     THETA3 : float
-#         angle of lower leg from the IK 
-#     link: Leg_linage
-#         A linkage class with all link lengths and relevant angles stored. Link values are based off
-#         the physcial design of the link
-
-#     Returns
-#     -------
-#     THETA0: float
-#         The angle of the servo that drives the outside of the linkage
-#     '''
-
-#     # First 4 bar linkages
-#     GDE,DEF,EFG = calculate_4_bar(THETA3,config.i,config.h,config.f,config.g) #+ config.lower_leg_bend_angle
-#     # Triangle section
-#     CDH = 3/2*m.pi - THETA2 - GDE - config.EDC
-#     CDA = CDH +config.gamma #input angle
-#     # Second 4 bar linkage
-#     DAB,ABC,BCD = calculate_4_bar(CDA ,config.d,config.a,config.b,config.c)
-#     #Calculating Theta
-#     THETA0 = DAB + config.gamma
-
-#     return THETA0
-
-#--------------------------------------------------------------< Comeco do Codigo >--------------------------------------------------------------#
-
-
-# config = Configuration()
-
-# foot_locations = (
-#             config.default_stance
-#             + np.array([0, 0, config.default_z_ref])[:, np.newaxis]
-# )
-
-
-# joint_angles = four_legs_inverse_kinematics(
-#             foot_locations, config
-#         )
-
-#print(np.matrix((joint_angles)))
-
-
-
-
-# print("X:")
-# x = float(input())
-# print("Y:")
-# y = float(input())
-# print("Z:")
-# z = float(input())
-
-# x = 0.0115 #olhando de lado = frente e tras
-# y = -0.04 #olhando de lado = entrando e saindo (se olhar de cima, Y para a esquerda é + e para a direita é -)
-# z = -0.22 #olhando de lado = cima e baixo
-
-
-
-# posicao = [x,y,z]
-
-
-# angulos = four_legs_inverse_kinematics(posicao, config)
-
-# print(f"\nPontos: {posicao[0]}, {posicao[1]}, {posicao[2]}")
-# exibe_deg(angulos[0],"theta_1 ajustado",1)
-
-# exibe_deg(angulos[1],"theta_2 ajustado",1)
-
-# exibe_deg(angulos[2],"theta_3 ajustado",1)
-# print("\n")
+if __name__ == "__main__":
+    # Interactive standalone bench test
+    cfg = Configuration()
+    foot_pos = cfg.default_stance + np.array([0, 0, cfg.default_z_ref])[:, np.newaxis]
+    angles = four_legs_inverse_kinematics(foot_pos, cfg)
+    print("Computed angles in default standing pose (3x4 in degrees):")
+    print(np.round(angles, 2))
