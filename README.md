@@ -93,7 +93,7 @@ Quadruped robots equipped with high-torque metal-gear servomotors can strip gear
    - 1st: Power the Raspberry Pi logic and wait for the OS to complete booting.
    - 2nd: Turn on/connect the gamepad controller.
    - 3rd: Turn on the external high-current power supply for the servos.
-3. **Emergency Stop (E-Stop):** Pressing `L1` immediately commands the robot into a relaxed state. Pressing `Ctrl + C` in the terminal safely terminates execution.
+3. **Deactivation and Emergency Power-Off:** `L1` transitions the robot to its nominal standing pose over approximately 1.2 seconds, then returns to idle; the servos remain energized. `Ctrl + C` exits the program but does not disable PCA9685 PWM. Neither action removes servo holding torque. Use an external servo-power cutoff for an emergency stop.
 
 ---
 
