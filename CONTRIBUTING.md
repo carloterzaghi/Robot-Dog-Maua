@@ -1,6 +1,6 @@
 # 🤝 Contribution Guidelines — Robot-Dog-Maua
 
-Thank you for your interest in contributing to **Robot-Dog-Maua**! This document outlines our engineering standards, coding conventions, testing procedures, and safety protocols to ensure the codebase remains robust, maintainable, and safe for all contributors.
+Thank you for your interest in contributing to **Robot-Dog-Maua** or **MauAU**! This document outlines our engineering standards, coding conventions, testing procedures, and safety protocols to ensure the codebase remains robust, maintainable, and safe for all contributors.
 
 ---
 
@@ -78,22 +78,3 @@ Servomotors under dynamic loads can strip gear teeth or burn out if commanded pa
    - Place the robot chassis on an elevated stand keeping **all 4 legs suspended in the air**.
    - Power logic first, connect the gamepad, and only then enable motor power.
    - Test static poses (`X` for 90° neutral calibration, `A` for laying down/standing up) before triggering dynamic trotting (`R1`).
-
----
-
-## 4. Branching & Commit Conventions
-
-- Use descriptive branch names:
-  - `feature/your-feature-name`
-  - `fix/kinematics-bounds`
-  - `docs/wiring-update`
-- Follow Conventional Commits for commit messages:
-  - `feat: add low-pass filter to IMU roll estimation`
-  - `fix: clamp maximum leg extension in inverse kinematics`
-  - `docs: update PCA9685 wiring diagram and channel table`
-
----
-
-## 5. Getting Help & Support
-
-For technical discussions, bug reports, or feature proposals, open an Issue on GitHub or reach out to the project team at the **Instituto Mauá de Tecnologia** robotics laboratory.

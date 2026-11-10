@@ -219,6 +219,22 @@ Explore the comprehensive mathematical models, hardware diagrams, and calibratio
 
 ---
 
-## 👥 Authors & Contributions
+## 👥 Authors & Team
 
-Developed by the robotics research team at **Instituto Mauá de Tecnologia (IMT)**. For contribution guidelines, style standards, and safety verification procedures, please consult [CONTRIBUTING.md](CONTRIBUTING.md).
+Project developed by undergraduate students of Control and Automation Engineering at **Instituto Mauá de Tecnologia (IMT)**:
+
+**Carlo Terzaghi Tuck Schneider** | [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/carlotts) [![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat&logo=github&logoColor=white)](https://github.com/carloterzaghi)
+
+**Gustavo Junqueira Gallinari Arruda** | [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/gustavo-junqueira-gallinari-arruda-55b337243) [![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat&logo=github&logoColor=white)](https://github.com/gusjga)
+
+**Tamilis Lin Wu** | [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/tamilis-lin-wu-31a751240)
+
+**Kassem Mahmoud Hamdoun** | [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/kassem-mahmoud)
+
+### 🎓 Academic Advisor
+* **Profª. M.ª Andressa Corrente Martins** - Professor & Researcher, Intelligent Mechatronic Systems and Robotics (SMIR / IMT)  
+  [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/andressacorrentemartins)
+
+---
+
+For contribution guidelines, coding standards, and safety verification procedures, please consult [CONTRIBUTING.md](CONTRIBUTING.md).
